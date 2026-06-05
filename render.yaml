@@ -1,11 +1,15 @@
 # ─────────────────────────────────────────────────────────
 #  Render Blueprint — SmartHostel
-#  NOTE: Database is managed separately (free tier = 1 DB max)
-#  Set DATABASE_URL manually from your existing Render DB.
 # ─────────────────────────────────────────────────────────
 
+databases:
+  - name: smarthostel-db
+    databaseName: hostel_db
+    user: hostel_user
+    plan: free
+
 services:
-  # ── 1. Backend API (Node / Express + Prisma) ─────────────────────────────
+  # ── 1. Backend API ────────────────────────────────────
   - type: web
     name: smarthostel-backend
     runtime: node
@@ -21,7 +25,9 @@ services:
       - key: PORT
         value: "5000"
       - key: DATABASE_URL
-        sync: false          # Set this manually from your Render PostgreSQL dashboard
+        fromDatabase:
+          name: smarthostel-db
+          property: connectionString
       - key: REDIS_URL
         value: ""
       - key: CLIENT_URL
@@ -47,7 +53,7 @@ services:
       - key: AI_SERVICE_URL
         value: "https://smarthostel-ai.onrender.com"
 
-  # ── 2. AI Microservice (Python / FastAPI) ─────────────────────────────────
+  # ── 2. AI Microservice ────────────────────────────────
   - type: web
     name: smarthostel-ai
     runtime: python
@@ -60,23 +66,19 @@ services:
       - key: AI_MODE
         value: mock
 
-  # ── 3. Frontend (Vite Static Site) ─────────────────────────────────────────
+  # ── 3. Frontend ───────────────────────────────────────
   - type: web
     name: smarthostel-frontend
     runtime: static
     rootDir: client
     buildCommand: npm install --legacy-peer-deps && npm run build
     staticPublishPath: dist
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: no-cache
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        sync: false          # Set this to: https://<your-backend>.onrender.com/api/v1
+        value: "https://smarthostel-backend.onrender.com/api/v1"
       - key: VITE_SOCKET_URL
-        sync: false          # Set this to: https://<your-backend>.onrender.com
+        value: "https://smarthostel-backend.onrender.com"
