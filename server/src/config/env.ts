@@ -14,8 +14,8 @@ export const env = {
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '15m',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
 
-  // Redis
-  REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
+  // Redis — optional. Leave blank to disable caching (app still works)
+  REDIS_URL: process.env.REDIS_URL || '',
 
   // Email
   SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',

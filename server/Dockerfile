@@ -5,28 +5,24 @@ RUN apk add --no-cache openssl
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install dependencies
 COPY package*.json ./
+RUN npm install --production=false
 
-# Install dependencies
-RUN npm install
-
-# Copy prisma schema
+# Copy prisma schema and generate client
 COPY prisma ./prisma/
-
-# Generate Prisma client
 RUN npx prisma generate
 
-# Copy source code
+# Copy source and build TypeScript
 COPY . .
-
-# Build TypeScript
 RUN npm run build
+
+# Remove dev deps after build to reduce image size
+RUN npm prune --production
 
 # Make entrypoint executable
 RUN chmod +x entrypoint.sh
 
 EXPOSE 5000
 
-# Use entrypoint to migrate, seed, then start
 CMD ["sh", "entrypoint.sh"]

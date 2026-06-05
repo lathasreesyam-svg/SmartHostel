@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────
+#  Render Blueprint — SmartHostel
+#  3 Services: Backend API + Frontend (Static) + AI Service
+#  1 Database: PostgreSQL (free)
+#
+#  DEPLOY STEPS:
+#  1. Push this file to GitHub root
+#  2. Go to render.com → New → Blueprint
+#  3. Connect your GitHub repo
+#  4. After backend deploys, update VITE_API_URL & VITE_SOCKET_URL
+#     in the frontend service with your actual backend URL
+# ─────────────────────────────────────────────────────────
+
+databases:
+  - name: smarthostel-db
+    databaseName: hostel_db
+    user: hostel_user
+    plan: free
+
+services:
+  # ── 1. Backend API (Node / Express + Prisma) ─────────────────────────────
+  - type: web
+    name: smarthostel-backend
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: sh entrypoint.sh
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smarthostel-db
+          property: connectionString
+      - key: REDIS_URL
+        value: ""
+      - key: CLIENT_URL
+        value: "*"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: "15m"
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: "7d"
+      - key: QR_SECRET
+        generateValue: true
+      - key: RATE_LIMIT_WINDOW_MS
+        value: "900000"
+      - key: RATE_LIMIT_MAX
+        value: "200"
+      - key: RAZORPAY_KEY_ID
+        value: "rzp_test_SxZOeiPTiif2Nd"
+      - key: RAZORPAY_KEY_SECRET
+        value: "Hv4Jdr7gtZjrNnmpY3mzwvag"
+      - key: AI_SERVICE_URL
+        value: "https://smarthostel-ai.onrender.com"
+
+  # ── 2. AI Microservice (Python / FastAPI) ─────────────────────────────────
+  - type: web
+    name: smarthostel-ai
+    runtime: python
+    plan: free
+    rootDir: ai-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: AI_MODE
+        value: mock
+
+  # ── 3. Frontend (Vite Static Site) ─────────────────────────────────────────
+  #  NOTE: After backend deploys, manually set in Render dashboard:
+  #    VITE_API_URL  = https://<your-backend>.onrender.com/api/v1
+  #    VITE_SOCKET_URL = https://<your-backend>.onrender.com
+  - type: web
+    name: smarthostel-frontend
+    runtime: static
+    plan: free
+    rootDir: client
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: "https://smarthostel-backend.onrender.com/api/v1"
+      - key: VITE_SOCKET_URL
+        value: "https://smarthostel-backend.onrender.com"

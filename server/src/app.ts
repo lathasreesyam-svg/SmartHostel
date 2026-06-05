@@ -53,19 +53,38 @@ app.use(
 );
 
 const ALLOWED_ORIGINS = [
-  env.CLIENT_URL,
   'http://localhost:3000',
   'http://localhost:5173',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
 ];
 
+// Add CLIENT_URL from env if it's a real URL (not '*')
+if (env.CLIENT_URL && env.CLIENT_URL !== '*') {
+  ALLOWED_ORIGINS.push(env.CLIENT_URL);
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman)
+      // Allow requests with no origin (mobile apps, curl, Postman, same-origin)
       if (!origin) return callback(null, true);
+
+      // Allow all origins if CLIENT_URL is set to wildcard
+      if (env.CLIENT_URL === '*') return callback(null, true);
+
+      // Allow any Railway or Render deployment URL dynamically
+      if (
+        origin.endsWith('.up.railway.app') ||
+        origin.endsWith('.onrender.com') ||
+        origin.endsWith('.vercel.app')
+      ) {
+        return callback(null, true);
+      }
+
+      // Allow exact matches from the list
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+
       callback(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
