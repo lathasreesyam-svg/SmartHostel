@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+.next/
+
+# Environment files (keep .env.example, not .env)
+.env
+.env.local
+.env.*.local
+# Keep server/.env since it has Razorpay keys baked in for demo
+# (for real prod, use Railway env vars instead)
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Docker volumes (not files, but just in case)
+postgres_data/
+redis_data/
+
+# Temporary
+*.tmp
+*.temp

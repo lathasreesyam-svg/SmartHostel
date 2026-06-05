@@ -1,0 +1,473 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================
+// ENUMS
+// ========================
+
+enum Role {
+  STUDENT
+  COMMITTEE
+  ADMIN
+  WARDEN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ComplaintCategory {
+  FOOD_QUALITY
+  FOOD_QUANTITY
+  HYGIENE
+  INFRASTRUCTURE
+  STAFF_BEHAVIOUR
+  OTHER
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  SNACKS
+  DINNER
+}
+
+enum RebateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum PaymentType {
+  MESS_FEE
+  HOSTEL_FEE
+  FINE
+  REFUND
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+}
+
+enum NotificationType {
+  ANNOUNCEMENT
+  COMPLAINT_UPDATE
+  REBATE_UPDATE
+  PAYMENT
+  MEAL_REMINDER
+  EMERGENCY
+  GENERAL
+}
+
+enum Shift {
+  MORNING
+  AFTERNOON
+  EVENING
+  NIGHT
+}
+
+// ========================
+// CORE MODELS
+// ========================
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  passwordHash    String
+  role            Role     @default(STUDENT)
+  primaryRole     Role     @default(STUDENT)  // Original/base role — never changed on elevation
+  isEmailVerified Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  studentProfile  StudentProfile?
+  notifications   Notification[]
+  complaints      Complaint[]
+  responses       ComplaintResponse[]
+  rebates         Rebate[]
+  attendance      Attendance[]
+  payments        Payment[]
+  sentMessages    ChatMessage[]      @relation("SentMessages")
+  feedback        Feedback[]
+  emailVerTokens  EmailVerification[]
+  passwordResets  PasswordReset[]
+
+  @@index([email])
+  @@index([role])
+  @@index([primaryRole])
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+model StudentProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  rollNumber     String   @unique
+  name           String
+  phone          String?
+  gender         Gender
+  department     String
+  year           Int
+  blockId        String?
+  roomNumber     String?
+  profilePicture String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  block   HostelBlock? @relation(fields: [blockId], references: [id])
+
+  @@index([rollNumber])
+  @@index([blockId])
+}
+
+model HostelBlock {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  capacity    Int
+  currentOccupancy Int @default(0)
+  wardenId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  students    StudentProfile[]
+
+  @@index([name])
+}
+
+// ========================
+// MENU & MEALS
+// ========================
+
+model Menu {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  schedules   MealSchedule[]
+}
+
+model MealItem {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  category    String
+  isVeg       Boolean  @default(true)
+  calories    Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  schedules   MealSchedule[] @relation("MealItems")
+}
+
+model MealSchedule {
+  id          String   @id @default(uuid())
+  menuId      String
+  mealType    MealType
+  dayOfWeek   Int      // 0=Sunday, 6=Saturday
+  date        DateTime?
+  startTime   String
+  endTime     String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  menu        Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items       MealItem[] @relation("MealItems")
+  attendance  Attendance[]
+
+  @@index([menuId])
+  @@index([mealType])
+  @@index([dayOfWeek])
+}
+
+// ========================
+// COMPLAINTS
+// ========================
+
+model Complaint {
+  id          String            @id @default(uuid())
+  userId      String
+  title       String
+  description String
+  category    ComplaintCategory
+  status      ComplaintStatus   @default(OPEN)
+  imageUrl    String?
+  isAnonymous Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  responses   ComplaintResponse[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+}
+
+model ComplaintResponse {
+  id          String   @id @default(uuid())
+  complaintId String
+  userId      String
+  message     String
+  createdAt   DateTime @default(now())
+
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([complaintId])
+}
+
+// ========================
+// REBATES
+// ========================
+
+model Rebate {
+  id          String       @id @default(uuid())
+  userId      String
+  fromDate    DateTime
+  toDate      DateTime
+  reason      String
+  status      RebateStatus @default(PENDING)
+  reviewedBy  String?
+  reviewNote  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ========================
+// INVENTORY
+// ========================
+
+model InventoryItem {
+  id              String   @id @default(uuid())
+  name            String
+  unit            String
+  currentStock    Float
+  minimumStock    Float
+  maximumCapacity Float
+  pricePerUnit    Float
+  supplier        String?
+  category        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  purchases       Purchase[]
+
+  @@index([name])
+  @@index([category])
+}
+
+model Purchase {
+  id            String   @id @default(uuid())
+  itemId        String
+  quantity      Float
+  pricePerUnit  Float
+  totalAmount   Float
+  supplier      String
+  purchasedBy   String
+  invoiceNumber String?
+  purchaseDate  DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  item          InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+  @@index([purchasedBy])
+}
+
+// ========================
+// NOTIFICATIONS
+// ========================
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(GENERAL)
+  isRead    Boolean          @default(false)
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([type])
+  @@index([userId, isRead, createdAt])
+}
+
+// ========================
+// ATTENDANCE
+// ========================
+
+model Attendance {
+  id             String           @id @default(uuid())
+  userId         String
+  scheduleId     String
+  status         AttendanceStatus
+  scannedAt      DateTime         @default(now())
+  qrToken        String?
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedule       MealSchedule @relation(fields: [scheduleId], references: [id])
+
+  @@unique([userId, scheduleId])
+  @@index([userId])
+  @@index([scheduleId])
+  @@index([userId, scannedAt])
+}
+
+// ========================
+// FEEDBACK
+// ========================
+
+model Feedback {
+  id          String   @id @default(uuid())
+  userId      String
+  scheduleId  String?
+  rating      Int      // 1-5
+  comment     String?
+  sentiment   String?  // AI-analyzed: positive, negative, neutral
+  createdAt   DateTime @default(now())
+
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([rating])
+}
+
+// ========================
+// PAYMENTS
+// ========================
+
+model Payment {
+  id            String        @id @default(uuid())
+  userId        String
+  amount        Float
+  type          PaymentType
+  status        PaymentStatus @default(PENDING)
+  description   String?
+  transactionId String?       @unique
+  month         Int?
+  year          Int?
+  dueDate       DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([userId, month, year])
+}
+
+// ========================
+// WORKERS / STAFF
+// ========================
+
+model Worker {
+  id           String   @id @default(uuid())
+  name         String
+  phone        String
+  email        String?  @unique
+  designation  String
+  shift        Shift    @default(MORNING)
+  salary       Float
+  joiningDate  DateTime @default(now())
+  isActive     Boolean  @default(true)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([shift])
+  @@index([isActive])
+  @@index([shift, isActive])
+}
+
+// ========================
+// CHAT
+// ========================
+
+model ChatRoom {
+  id        String   @id @default(uuid())
+  name      String
+  isGroup   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id         String   @id @default(uuid())
+  roomId     String
+  senderId   String
+  message    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  room       ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@index([roomId])
+  @@index([senderId])
+}
