@@ -1,21 +1,8 @@
 # ─────────────────────────────────────────────────────────
 #  Render Blueprint — SmartHostel
-#  3 Services: Backend API + Frontend (Static) + AI Service
-#  1 Database: PostgreSQL (free)
-#
-#  DEPLOY STEPS:
-#  1. Push this file to GitHub root
-#  2. Go to render.com → New → Blueprint
-#  3. Connect your GitHub repo
-#  4. After backend deploys, update VITE_API_URL & VITE_SOCKET_URL
-#     in the frontend service with your actual backend URL
+#  NOTE: Database is managed separately (free tier = 1 DB max)
+#  Set DATABASE_URL manually from your existing Render DB.
 # ─────────────────────────────────────────────────────────
-
-databases:
-  - name: smarthostel-db
-    databaseName: hostel_db
-    user: hostel_user
-    plan: free
 
 services:
   # ── 1. Backend API (Node / Express + Prisma) ─────────────────────────────
@@ -34,9 +21,7 @@ services:
       - key: PORT
         value: "5000"
       - key: DATABASE_URL
-        fromDatabase:
-          name: smarthostel-db
-          property: connectionString
+        sync: false          # Set this manually from your Render PostgreSQL dashboard
       - key: REDIS_URL
         value: ""
       - key: CLIENT_URL
@@ -76,9 +61,6 @@ services:
         value: mock
 
   # ── 3. Frontend (Vite Static Site) ─────────────────────────────────────────
-  #  NOTE: After backend deploys, manually set in Render dashboard:
-  #    VITE_API_URL  = https://<your-backend>.onrender.com/api/v1
-  #    VITE_SOCKET_URL = https://<your-backend>.onrender.com
   - type: web
     name: smarthostel-frontend
     runtime: static
@@ -95,6 +77,6 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: "https://smarthostel-backend.onrender.com/api/v1"
+        sync: false          # Set this to: https://<your-backend>.onrender.com/api/v1
       - key: VITE_SOCKET_URL
-        value: "https://smarthostel-backend.onrender.com"
+        sync: false          # Set this to: https://<your-backend>.onrender.com
