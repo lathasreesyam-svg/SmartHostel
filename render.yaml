@@ -78,8 +78,9 @@ services:
   #  NOTE: After backend deploys, manually set in Render dashboard:
   #    VITE_API_URL  = https://<your-backend>.onrender.com/api/v1
   #    VITE_SOCKET_URL = https://<your-backend>.onrender.com
-  - type: static
+  - type: web
     name: smarthostel-frontend
+    runtime: static
     rootDir: client
     buildCommand: npm install --legacy-peer-deps && npm run build
     staticPublishPath: dist
