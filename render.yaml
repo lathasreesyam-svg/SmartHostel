@@ -27,6 +27,7 @@ services:
     buildCommand: npm install && npx prisma generate && npm run build
     startCommand: sh entrypoint.sh
     healthCheckPath: /api/v1/health
+    numInstances: 1
     envVars:
       - key: NODE_ENV
         value: production

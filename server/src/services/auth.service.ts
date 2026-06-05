@@ -146,8 +146,17 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { studentProfile: { include: { block: true } } },
-      omit: { passwordHash: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        primaryRole: true,
+        isEmailVerified: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        studentProfile: { include: { block: true } },
+      },
     });
 
     if (!user) throw createError('User not found', 404);
@@ -190,7 +199,7 @@ export class AuthService {
         email: data.email,
         passwordHash,
         role: data.role as any,
-        primaryRole: data.role as any, // Lock in original role
+        primaryRole: data.role as any,
         isEmailVerified: true,
         isActive: true,
         ...(data.role === 'STUDENT' && data.rollNumber && {
@@ -206,8 +215,17 @@ export class AuthService {
           },
         }),
       },
-      include: { studentProfile: true },
-      omit: { passwordHash: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        primaryRole: true,
+        isEmailVerified: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        studentProfile: true,
+      },
     });
 
     return user;
