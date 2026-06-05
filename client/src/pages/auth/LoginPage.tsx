@@ -70,6 +70,7 @@ export default function LoginPage() {
           background: 'var(--gradient-primary)',
           opacity: 0.08,
           filter: 'blur(80px)',
+          pointerEvents: 'none',
         }}
       />
       <div
@@ -83,12 +84,13 @@ export default function LoginPage() {
           background: 'var(--color-accent)',
           opacity: 0.07,
           filter: 'blur(80px)',
+          pointerEvents: 'none',
         }}
       />
 
       <div
         className="animate-fade-in"
-        style={{ width: '100%', maxWidth: 440 }}
+        style={{ width: '100%', maxWidth: 440, position: 'relative', zIndex: 1 }}
       >
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>

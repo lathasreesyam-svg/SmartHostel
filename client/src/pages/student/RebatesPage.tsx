@@ -62,7 +62,14 @@ export default function RebatesPage() {
       setStep(1);
       setForm(EMPTY_FORM);
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to submit'),
+    onError: (e: any) => {
+      const data = e.response?.data;
+      if (data?.errors && data.errors.length > 0) {
+        toast.error(data.errors[0].message);
+      } else {
+        toast.error(data?.message || 'Failed to submit');
+      }
+    },
   });
 
   const days =

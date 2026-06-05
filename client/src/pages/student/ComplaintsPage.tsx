@@ -64,7 +64,14 @@ export default function ComplaintsPage() {
       toast.success('Complaint submitted successfully');
       setShowForm(false);
     },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to submit'),
+    onError: (e: any) => {
+      const data = e.response?.data;
+      if (data?.errors && data.errors.length > 0) {
+        toast.error(data.errors[0].message);
+      } else {
+        toast.error(data?.message || 'Failed to submit');
+      }
+    },
   });
 
   const responseMutation = useMutation({
