@@ -4,10 +4,20 @@ import prisma from '../config/database';
 import { createError } from '../middleware/errorHandler';
 import env from '../config/env';
 
-const razorpay = new Razorpay({
-  key_id: env.RAZORPAY_KEY_ID,
-  key_secret: env.RAZORPAY_KEY_SECRET,
-});
+// Lazily initialized so missing keys don't crash the server on startup
+let _razorpay: Razorpay | null = null;
+function getRazorpay(): Razorpay {
+  if (!_razorpay) {
+    if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+      throw new Error('Razorpay keys not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET env vars.');
+    }
+    _razorpay = new Razorpay({
+      key_id: env.RAZORPAY_KEY_ID,
+      key_secret: env.RAZORPAY_KEY_SECRET,
+    });
+  }
+  return _razorpay;
+}
 
 export class PaymentService {
   async getMyPayments(userId: string) {
@@ -61,7 +71,7 @@ export class PaymentService {
     if (payment.status === 'SUCCESS') throw createError('Already paid', 409);
 
     // Razorpay amount is in paise (multiply by 100)
-    const order = await razorpay.orders.create({
+    const order = await getRazorpay().orders.create({
       amount: Math.round(payment.amount * 100),
       currency: 'INR',
       receipt: `receipt_${paymentId.slice(0, 20)}`,

@@ -7,12 +7,14 @@ dist/
 build/
 .next/
 
-# Environment files (keep .env.example, not .env)
-.env
+# Environment files
 .env.local
 .env.*.local
-# Keep server/.env since it has Razorpay keys baked in for demo
-# (for real prod, use Railway env vars instead)
+# Allow server/.env (contains only demo/test keys - safe to commit)
+!server/.env
+# Ignore root and client env files
+client/.env
+client/.env.*
 
 # Logs
 *.log
