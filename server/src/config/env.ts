@@ -5,8 +5,9 @@ export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || '5000', 10),
 
-  // Database
+  // Database (connection_limit=5 prevents pool exhaustion on scaled deploys)
   DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/hostel_db',
+  DB_CONNECTION_LIMIT: parseInt(process.env.DB_CONNECTION_LIMIT || '5', 10),
 
   // JWT
   JWT_SECRET: process.env.JWT_SECRET || 'super-secret-jwt-key-change-in-prod',
@@ -17,12 +18,13 @@ export const env = {
   // Redis — optional. Leave blank to disable caching (app still works)
   REDIS_URL: process.env.REDIS_URL || '',
 
-  // Email
-  SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
+  // Email — SendGrid SMTP (or any SMTP provider)
+  SMTP_HOST: process.env.SMTP_HOST || 'smtp.sendgrid.net',
   SMTP_PORT: parseInt(process.env.SMTP_PORT || '587', 10),
-  SMTP_USER: process.env.SMTP_USER || '',
-  SMTP_PASS: process.env.SMTP_PASS || '',
-  FROM_EMAIL: process.env.FROM_EMAIL || 'noreply@hostel.edu',
+  SMTP_USER: process.env.SMTP_USER || 'apikey',           // SendGrid uses literal 'apikey'
+  SMTP_PASS: (process.env.SMTP_PASS || '').trim(),            // Put your SendGrid API key here
+  FROM_EMAIL: process.env.FROM_EMAIL || 'noreply@smarthostel.edu',
+  APP_URL: process.env.APP_URL || 'http://localhost:5173', // Frontend URL for email links
 
   // AI Service
   AI_SERVICE_URL: process.env.AI_SERVICE_URL || 'http://localhost:8000',

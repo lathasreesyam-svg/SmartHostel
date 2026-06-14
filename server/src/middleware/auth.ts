@@ -1,17 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
+import { isTokenBlacklisted } from '../utils/tokenBlacklist';
 import { logger } from '../utils/logger';
 
 export interface AuthRequest extends Request {
   user?: {
+    jti: string;
     userId: string;
     email: string;
     role: string;
     primaryRole: string;
+    exp?: number; // JWT expiry timestamp (seconds since epoch)
   };
 }
 
-export function authenticate(req: AuthRequest, res: Response, next: NextFunction): void {
+export async function authenticate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -23,6 +26,13 @@ export function authenticate(req: AuthRequest, res: Response, next: NextFunction
 
   try {
     const decoded = verifyAccessToken(token);
+
+    // 🚫 Check if this specific token has been blacklisted (logout/deactivation)
+    if (decoded.jti && await isTokenBlacklisted(decoded.jti)) {
+      res.status(401).json({ success: false, message: 'Token has been revoked. Please log in again.' });
+      return;
+    }
+
     req.user = decoded;
     next();
   } catch (error) {

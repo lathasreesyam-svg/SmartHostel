@@ -58,6 +58,7 @@ enum RebateStatus {
 
 enum PaymentStatus {
   PENDING
+  PROCESSING
   SUCCESS
   FAILED
   REFUNDED
@@ -127,12 +128,14 @@ model User {
 model EmailVerification {
   id        String   @id @default(uuid())
   userId    String
-  token     String   @unique
+  token     String   @unique   // UUID — used as a lookup key
+  otp       String   @default("") // 6-digit OTP code shown to the user
   expiresAt DateTime
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([token])
+  @@index([userId])
 }
 
 model PasswordReset {

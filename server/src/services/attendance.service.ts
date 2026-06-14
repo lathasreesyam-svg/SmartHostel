@@ -48,6 +48,33 @@ export class AttendanceService {
       },
     });
 
+    // 🔒 Rebate Cross-Check: Void any active rebate covering today's date
+    // A student can't claim a rebate day AND eat in the mess on the same day
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+    const activeRebate = await prisma.rebate.findFirst({
+      where: {
+        userId,
+        status: 'APPROVED',
+        fromDate: { lte: todayEnd },
+        toDate: { gte: todayStart },
+      },
+    });
+
+    if (activeRebate) {
+      // Log the conflict — in a full system you'd either split the rebate or void the day
+      // For now: update the rebate note to flag the conflict day
+      await prisma.rebate.update({
+        where: { id: activeRebate.id },
+        data: {
+          reviewNote: (activeRebate.reviewNote || '') +
+            `\n[AUTO] Attendance marked on ${todayStart.toISOString().slice(0, 10)} during rebate period.`,
+        },
+      });
+    }
+
     return attendance;
   }
 

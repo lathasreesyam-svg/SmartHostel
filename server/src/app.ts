@@ -93,7 +93,7 @@ app.use(
   })
 );
 
-// ── Rate Limiting ──
+// ── Rate Limiting — Global ──────────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   max: env.RATE_LIMIT_MAX,
@@ -102,7 +102,18 @@ const limiter = rateLimit({
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
 
+// ── Rate Limiting — AI Chat (strict: 10 requests/minute per user) ─────────────
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,       // 1 minute window
+  max: 10,                   // max 10 AI requests per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false }, // suppress IPv6 validation warning
+  message: { success: false, message: 'AI chat rate limit exceeded. Please wait a moment before sending more messages.' },
+});
+
 app.use('/api/', limiter);
+app.use('/api/v1/chat', aiLimiter); // Extra strict limit for AI endpoints
 
 // ── General Middleware ──
 app.use(compression());

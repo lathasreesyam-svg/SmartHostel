@@ -68,7 +68,14 @@ export class PaymentService {
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw createError('Payment not found', 404);
     if (payment.userId !== userId) throw createError('Not authorized', 403);
-    if (payment.status === 'SUCCESS') throw createError('Already paid', 409);
+
+    // String cast for safety before prisma generate runs with new PROCESSING enum
+    const statusStr = payment.status as string;
+    if (statusStr === 'SUCCESS') throw createError('Already paid', 409);
+    // 🔒 Payment Amount Lock: Prevent amount changes after checkout starts
+    if (statusStr === 'PROCESSING') {
+      throw createError('Payment is already being processed — please complete or refresh the page', 409);
+    }
 
     // Razorpay amount is in paise (multiply by 100)
     const order = await getRazorpay().orders.create({
@@ -80,6 +87,12 @@ export class PaymentService {
         userId,
         description: payment.description || payment.type,
       },
+    });
+
+    // 🔒 Lock the payment: set to PROCESSING so amount cannot be changed mid-checkout
+    await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status: 'PROCESSING' as any },
     });
 
     return {
@@ -103,7 +116,7 @@ export class PaymentService {
     const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw createError('Payment not found', 404);
     if (payment.userId !== userId) throw createError('Not authorized', 403);
-    if (payment.status === 'SUCCESS') throw createError('Already paid', 409);
+    if ((payment.status as string) === 'SUCCESS') throw createError('Already paid', 409);
 
     // Verify Razorpay signature (HMAC-SHA256)
     const body = `${razorpay_order_id}|${razorpay_payment_id}`;
@@ -116,7 +129,7 @@ export class PaymentService {
       throw createError('Payment verification failed: invalid signature', 400);
     }
 
-    // Update DB with real transaction ID
+    // Update DB with real transaction ID and mark SUCCESS
     return prisma.payment.update({
       where: { id: paymentId },
       data: {

@@ -3,6 +3,10 @@ import { hashPassword, comparePassword } from '../utils/bcrypt';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { createError } from '../middleware/errorHandler';
 import { randomUUID } from 'crypto';
+import { sendPasswordResetEmail, sendOtpEmail } from '../utils/email';
+import { blacklistToken } from '../utils/tokenBlacklist';
+import { logger } from '../utils/logger';
+import env from '../config/env';
 import type { RegisterInput, LoginInput } from '../validators/auth.validator';
 
 export class AuthService {
@@ -14,6 +18,16 @@ export class AuthService {
 
     if (input.role === 'STUDENT' && !input.rollNumber) {
       throw createError('Roll number is required for students', 400);
+    }
+
+    // Check roll number uniqueness before attempting create
+    if (input.role === 'STUDENT' && input.rollNumber) {
+      const existingRoll = await prisma.studentProfile.findUnique({
+        where: { rollNumber: input.rollNumber },
+      });
+      if (existingRoll) {
+        throw createError('Roll number already registered. Please use a different roll number.', 409);
+      }
     }
 
     const passwordHash = await hashPassword(input.password);
@@ -31,40 +45,49 @@ export class AuthService {
               rollNumber: input.rollNumber!,
               department: input.department || 'Unknown',
               year: input.year || 1,
-              gender: input.gender || 'OTHER',
+              gender: input.gender || ('OTHER' as any),
               phone: input.phone,
             },
           },
         }),
       },
       include: { studentProfile: true },
+    }).catch((e: any) => {
+      if (e?.code === 'P2002') {
+        const field: string = e?.meta?.target?.[0] ?? 'field';
+        const label = field === 'rollNumber' ? 'Roll number'
+          : field === 'email' ? 'Email'
+          : 'A value';
+        throw createError(`${label} already exists. Please use a different one.`, 409);
+      }
+      throw e;
     });
 
-    // Create email verification token
+    // Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const verificationToken = randomUUID();
+
     await prisma.emailVerification.create({
       data: {
         userId: user.id,
         token: verificationToken,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+        otp,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
       },
     });
 
-    const accessToken = signAccessToken({ userId: user.id, email: user.email, role: user.role, primaryRole: user.primaryRole });
-    const refreshToken = signRefreshToken({ userId: user.id, email: user.email, role: user.role, primaryRole: user.primaryRole });
+    // Send OTP email (non-blocking — don't fail registration if email fails)
+    const studentName = input.role === 'STUDENT' ? (input.name || input.email) : input.email;
+    sendOtpEmail(input.email, studentName, otp).catch((err) =>
+      logger.warn('Registration OTP email send failed:', err)
+    );
 
+    // Dev mode: expose otp in response for testing when no SMTP is configured
     return {
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        primaryRole: user.primaryRole,
-        isEmailVerified: user.isEmailVerified,
-        profile: user.studentProfile,
-      },
-      accessToken,
-      refreshToken,
-      verificationToken, // In prod, email this instead
+      userId: user.id,
+      email: user.email,
+      requiresOtp: true,
+      ...(env.SMTP_PASS ? {} : { devOtp: otp }),
     };
   }
 
@@ -81,6 +104,11 @@ export class AuthService {
     const isPasswordValid = await comparePassword(input.password, user.passwordHash);
     if (!isPasswordValid) {
       throw createError('Invalid credentials', 401);
+    }
+
+    // Block login if email is not verified
+    if (!user.isEmailVerified) {
+      throw createError('Please verify your email before logging in. Check your inbox for the OTP code.', 403);
     }
 
     const accessToken = signAccessToken({ userId: user.id, email: user.email, role: user.role, primaryRole: user.primaryRole });
@@ -128,19 +156,131 @@ export class AuthService {
     }
   }
 
-  async verifyEmail(token: string) {
-    const record = await prisma.emailVerification.findUnique({ where: { token } });
-    if (!record || record.expiresAt < new Date()) {
-      throw createError('Invalid or expired verification token', 400);
+  // ── Verify OTP ────────────────────────────────────────────────────────────────
+  async verifyOtp(userId: string, otp: string) {
+    const record = await prisma.emailVerification.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!record) {
+      throw createError('No pending verification found. Please register again.', 400);
     }
+    if (record.expiresAt < new Date()) {
+      throw createError('OTP has expired. Please request a new one.', 400);
+    }
+    if (record.otp !== otp) {
+      throw createError('Invalid OTP. Please check your email and try again.', 400);
+    }
+
+    // Mark email as verified
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { isEmailVerified: true },
+      include: { studentProfile: true },
+    });
+
+    // Clean up verification record
+    await prisma.emailVerification.deleteMany({ where: { userId } });
+
+    // Issue tokens — user is now fully authenticated
+    const accessToken = signAccessToken({ userId: user.id, email: user.email, role: user.role, primaryRole: user.primaryRole });
+    const refreshToken = signRefreshToken({ userId: user.id, email: user.email, role: user.role, primaryRole: user.primaryRole });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        primaryRole: user.primaryRole,
+        isEmailVerified: true,
+        profile: user.studentProfile,
+      },
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  // ── Resend OTP ──────────────────────────────────────────────────────────────
+  async resendOtp(userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { studentProfile: true },
+    });
+    if (!user) throw createError('User not found', 404);
+    if (user.isEmailVerified) throw createError('Email is already verified', 409);
+
+    // Invalidate old OTPs for this user
+    await prisma.emailVerification.deleteMany({ where: { userId } });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await prisma.emailVerification.create({
+      data: {
+        userId,
+        token: randomUUID(),
+        otp,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+      },
+    });
+
+    const name = user.studentProfile?.name || user.email;
+    await sendOtpEmail(user.email, name, otp);
+
+    return {
+      message: 'A new OTP has been sent to your email.',
+      ...(env.SMTP_PASS ? {} : { devOtp: otp }),
+    };
+  }
+
+  // ── Forgot Password ─────────────────────────────────────────────────────────
+  async forgotPassword(email: string) {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: { studentProfile: true },
+    });
+
+    // Always return success to prevent email enumeration attacks
+    if (!user || !user.isActive) {
+      return { message: 'If an account with that email exists, a reset link has been sent.' };
+    }
+
+    // Invalidate any existing reset tokens
+    await prisma.passwordReset.deleteMany({ where: { userId: user.id } });
+
+    // Create new reset token (1 hour expiry)
+    const resetToken = randomUUID();
+    await prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token: resetToken,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+      },
+    });
+
+    const userName = user.studentProfile?.name || email;
+    await sendPasswordResetEmail(email, userName, resetToken);
+
+    return { message: 'If an account with that email exists, a reset link has been sent.' };
+  }
+
+  // ── Reset Password ──────────────────────────────────────────────────────────
+  async resetPassword(token: string, newPassword: string) {
+    const record = await prisma.passwordReset.findUnique({ where: { token } });
+    if (!record || record.expiresAt < new Date()) {
+      throw createError('Invalid or expired reset token. Please request a new one.', 400);
+    }
+
+    const passwordHash = await hashPassword(newPassword);
 
     await prisma.user.update({
       where: { id: record.userId },
-      data: { isEmailVerified: true },
+      data: { passwordHash },
     });
 
-    await prisma.emailVerification.delete({ where: { token } });
-    return { message: 'Email verified successfully' };
+    // Clean up — token is single-use
+    await prisma.passwordReset.delete({ where: { token } });
+
+    return { message: 'Password reset successfully. You can now log in with your new password.' };
   }
 
   async getProfile(userId: string) {
@@ -229,6 +369,14 @@ export class AuthService {
     });
 
     return user;
+  }
+  // ── Logout (blacklist this token) ───────────────────────────────────────────
+  async logout(jti: string, exp: number | undefined) {
+    if (jti) {
+      const ttl = exp ? exp - Math.floor(Date.now() / 1000) : 900; // default 15m
+      if (ttl > 0) await blacklistToken(jti, ttl);
+    }
+    return { message: 'Logged out successfully' };
   }
 }
 

@@ -93,6 +93,11 @@ export class RebateService {
       throw createError('Rebate is already reviewed', 400);
     }
 
+    // 🛡️ Prevent self-approval: committee members cannot approve their own rebates
+    if (rebate.userId === reviewerId) {
+      throw createError('You cannot review your own rebate application', 403);
+    }
+
     return prisma.rebate.update({
       where: { id },
       data: {

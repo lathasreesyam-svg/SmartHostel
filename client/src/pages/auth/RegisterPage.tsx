@@ -4,8 +4,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Building2, Loader2, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../lib/api';
-import { useAuthStore } from '../../stores/authStore';
-import { connectSocket } from '../../lib/socket';
 
 interface RegisterForm {
   name: string;
@@ -23,7 +21,6 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { setAuth } = useAuthStore();
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterForm>({
     defaultValues: { role: 'STUDENT', year: 1, gender: 'MALE' },
@@ -35,15 +32,20 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       const res = await api.post('/auth/register', { ...data, year: Number(data.year) });
-      const { user, accessToken, refreshToken } = res.data.data;
-      setAuth(user, accessToken, refreshToken);
-      connectSocket();
-      toast.success('Registration successful! Welcome 🎉');
-      navigate(user.role === 'STUDENT' ? '/student/dashboard' : '/committee/dashboard');
+      const { userId, email, devOtp } = res.data.data;
+
+      toast.success('Account created! Check your email for the verification code.');
+
+      // Dev mode: if no SMTP configured, show the OTP in a toast
+      if (devOtp) {
+        toast(`Dev mode OTP: ${devOtp}`, { icon: '🛠️', duration: 30000 });
+      }
+
+      // Navigate to OTP verification page
+      navigate(`/auth/verify-otp?userId=${userId}&email=${encodeURIComponent(email)}`);
     } catch (error: any) {
       const errData = error.response?.data;
       if (errData?.errors?.length) {
-        // Show all validation errors
         errData.errors.forEach((e: any) => toast.error(`${e.field}: ${e.message}`));
       } else {
         toast.error(errData?.message || 'Registration failed. Please check your details.');

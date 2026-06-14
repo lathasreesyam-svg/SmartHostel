@@ -8,6 +8,9 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 // Auth pages
 const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'));
+const VerifyOtpPage = lazy(() => import('./pages/auth/VerifyOtpPage'));
 
 // Student pages
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
@@ -72,6 +75,9 @@ export default function App() {
             <Route path="/" element={<Navigate to="/auth/login" replace />} />
             <Route path="/auth/login" element={<LoginPage />} />
             <Route path="/auth/register" element={<RegisterPage />} />
+            <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/auth/verify-otp" element={<VerifyOtpPage />} />
 
             {/* Student Routes */}
             <Route path="/student/dashboard" element={

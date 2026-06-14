@@ -25,6 +25,20 @@ export function getSocket(): Socket {
 
     socket.on('notification:new', (notification) => {
       useNotificationStore.getState().addNotification(notification);
+      // 🔔 Show real-time toast popup so users don't miss notifications
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast(notification.title || 'New notification', {
+          icon: '🔔',
+          duration: 5000,
+          style: {
+            background: '#fff',
+            border: '1px solid #2b7fc4',
+            borderLeft: '4px solid #2b7fc4',
+            borderRadius: '12px',
+            fontSize: '14px',
+          },
+        });
+      });
     });
 
     socket.on('notification:unread_count', ({ count }: { count: number }) => {
