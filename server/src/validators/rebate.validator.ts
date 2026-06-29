@@ -1,17 +1,17 @@
 import { z } from 'zod';
 
+// Accept both ISO datetime (2026-07-01T00:00:00Z) and date strings (2026-07-01)
+const dateOrDatetime = z
+  .string()
+  .refine((val) => !isNaN(Date.parse(val)), { message: 'Invalid date format. Use YYYY-MM-DD or ISO 8601' });
+
 export const createRebateSchema = z.object({
-  fromDate: z.string().datetime({ message: 'Invalid fromDate' }),
-  toDate: z.string().datetime({ message: 'Invalid toDate' }),
+  fromDate: dateOrDatetime,
+  toDate: dateOrDatetime,
   reason: z.string().min(10, 'Reason must be at least 10 characters').max(500),
-  // Bank details for refund processing
-  bankAccountName: z.string().min(2, 'Account holder name required').max(100).optional(),
-  bankAccountNumber: z.string().min(9, 'Invalid account number').max(20).optional(),
-  ifscCode: z.string().length(11, 'IFSC code must be 11 characters').optional(),
-  bankName: z.string().min(2, 'Bank name required').max(100).optional(),
 }).refine(
-  (data) => new Date(data.fromDate) <= new Date(data.toDate),
-  { message: 'From date must be on or before to date', path: ['toDate'] }
+  (data) => new Date(data.fromDate) < new Date(data.toDate),
+  { message: 'fromDate must be before toDate', path: ['toDate'] }
 );
 
 export const reviewRebateSchema = z.object({

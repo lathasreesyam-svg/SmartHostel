@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, Filter, Users, UtensilsCrossed, QrCode, RefreshCw } from 'lucide-react';
+import { Calendar, Filter, Users, UtensilsCrossed, ClipboardList, RefreshCw } from 'lucide-react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
 import api from '../../lib/api';
 
@@ -48,7 +48,7 @@ export default function AdminAttendancePage() {
         <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 className="page-title">All Attendance Records</h1>
-            <p className="page-subtitle">QR-scanned meal attendance across all students</p>
+            <p className="page-subtitle">Meal attendance marked by committee members</p>
           </div>
           <button className="btn btn-secondary" onClick={() => refetch()}>
             <RefreshCw size={14} /> Refresh
@@ -59,10 +59,10 @@ export default function AdminAttendancePage() {
         {statsData && (
           <div className="stats-grid" style={{ marginBottom: 24 }}>
             {[
-              { label: 'Total Scans', value: statsData.total, icon: <QrCode size={18} />, color: '#6366f1' },
+              { label: 'Total Records', value: statsData.total, icon: <ClipboardList size={18} />, color: '#6366f1' },
               { label: 'Present', value: statsData.present, icon: <Users size={18} />, color: '#10b981' },
               { label: 'Absent', value: statsData.absent, icon: <Calendar size={18} />, color: '#ef4444' },
-              { label: 'Attendance Rate', value: `${Math.round(statsData.percentage)}%`, icon: <UtensilsCrossed size={18} />, color: '#f59e0b' },
+              { label: 'Attendance Rate', value: `${(statsData.attendanceRate ?? Math.round((statsData.present / (statsData.total || 1)) * 100)) || 0}%`, icon: <UtensilsCrossed size={18} />, color: '#f59e0b' },
             ].map((s) => (
               <div key={s.label} className="card" style={{ padding: 18 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -111,7 +111,7 @@ export default function AdminAttendancePage() {
             </div>
           ) : records.length === 0 ? (
             <div className="empty-state" style={{ padding: 60 }}>
-              <div className="empty-state-icon"><QrCode size={28} /></div>
+              <div className="empty-state-icon"><ClipboardList size={28} /></div>
               <h3>No attendance records</h3>
               <p>No records match the selected filters</p>
             </div>
@@ -120,7 +120,7 @@ export default function AdminAttendancePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--color-border)', background: 'rgba(99,102,241,0.03)' }}>
-                    {['Student', 'Roll No', 'Meal', 'Day', 'Time', 'Scanned At', 'Status'].map((h) => (
+                    {['Student', 'Roll No', 'Meal', 'Day', 'Time', 'Marked At', 'Status'].map((h) => (
                       <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -152,7 +152,7 @@ export default function AdminAttendancePage() {
                           {r.schedule?.startTime}–{r.schedule?.endTime}
                         </td>
                         <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                          {new Date(r.scannedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          {new Date(r.markedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td style={{ padding: '12px 16px' }}>
                           <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sc.bg, color: sc.color }}>

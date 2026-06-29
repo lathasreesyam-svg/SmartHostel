@@ -20,7 +20,7 @@ export class AnalyticsController {
         prisma.rebate.count({ where: { status: 'PENDING' } }),
         prisma.attendance.count({
           where: {
-            scannedAt: {
+            markedAt: {
               gte: new Date(new Date().setHours(0, 0, 0, 0)),
               lte: new Date(new Date().setHours(23, 59, 59, 999)),
             },
@@ -78,13 +78,21 @@ export class AnalyticsController {
       const end = new Date(year, month, 0, 23, 59, 59);
 
       const attendance = await prisma.attendance.findMany({
-        where: { scannedAt: { gte: start, lte: end } },
-        select: { scannedAt: true, status: true, schedule: { select: { mealType: true } } },
+        where: { markedAt: { gte: start, lte: end } },
+        select: { markedAt: true, status: true, scheduleId: true },
       });
+
+      // Fetch schedule mealTypes for all scheduleIds found
+      const scheduleIds = [...new Set(attendance.map(a => a.scheduleId))];
+      const schedules = await prisma.mealSchedule.findMany({
+        where: { id: { in: scheduleIds } },
+        select: { id: true, mealType: true },
+      });
+      const scheduleMap = new Map(schedules.map(s => [s.id, s.mealType]));
 
       const byMealType: Record<string, number> = {};
       attendance.forEach((a) => {
-        const mealType = a.schedule.mealType;
+        const mealType = scheduleMap.get(a.scheduleId) || 'UNKNOWN';
         byMealType[mealType] = (byMealType[mealType] || 0) + 1;
       });
 

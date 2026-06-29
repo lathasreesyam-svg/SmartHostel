@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   User, Mail, Phone, BookOpen, Building2, Hash,
-  Edit3, Save, X, Shield, Calendar, CheckCircle,
+  Edit3, Save, X, Shield, Calendar, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DashboardLayout from '../components/layout/DashboardLayout';
@@ -58,6 +58,15 @@ export default function ProfilePage() {
       toast.success('Profile updated!');
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Update failed'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete('/auth/profile'),
+    onSuccess: () => {
+      useAuthStore.getState().logout();
+      window.location.href = '/auth/login';
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to delete account'),
   });
 
   const profile = data?.studentProfile;
@@ -234,6 +243,29 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
+
+              {/* Danger Zone */}
+              <div className="card" style={{ padding: 24, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.02)' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444' }}>
+                  <AlertTriangle size={15} color="#ef4444" />
+                  Danger Zone
+                </div>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 16 }}>
+                  Once you delete your account, there is no going back. Please be certain. All your data including complaints, attendance, and profile details will be permanently removed.
+                </p>
+                <button
+                  className="btn btn-primary"
+                  style={{ background: '#ef4444', color: 'white', border: 'none', width: '100%', padding: '10px' }}
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    if (window.confirm('Are you absolutely sure you want to delete your account? This action cannot be undone.')) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                >
+                  {deleteMutation.isPending ? 'Deleting...' : 'Delete Account'}
+                </button>
+              </div>
             </div>
           </div>
         )}

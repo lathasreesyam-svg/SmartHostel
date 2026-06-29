@@ -30,6 +30,7 @@ router.post('/resend-otp',      validate(resendOtpSchema),       authController.
 // ── Protected Routes ──────────────────────────────────────────────────────────
 router.get('/profile',          authenticate, authController.getProfile.bind(authController));
 router.patch('/profile',        authenticate, authController.updateProfile.bind(authController));
+router.delete('/profile',       authenticate, authController.deleteAccount.bind(authController));
 router.post('/logout',          authenticate, authController.logout.bind(authController));
 router.post('/admin/create-user', authenticate, authorize('ADMIN'), authController.adminCreateUser.bind(authController));
 

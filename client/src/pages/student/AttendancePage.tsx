@@ -1,263 +1,197 @@
+/**
+ * Student Attendance Page (Read-Only)
+ *
+ * Shows the student's attendance history — marked by committee members.
+ * QR code flow has been removed. Attendance is now marked manually.
+ *
+ * RBAC: Student can only see their own records (enforced on API via ABAC).
+ */
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { QrCode, CheckCircle, Clock, AlertCircle, Star } from 'lucide-react';
-import toast from 'react-hot-toast';
-import DashboardLayout from '../../components/layout/DashboardLayout';
+import { useQuery } from '@tanstack/react-query';
+import { ClipboardList, CheckCircle2, XCircle, BarChart3, Loader2, Calendar } from 'lucide-react';
 import api from '../../lib/api';
-import { useAuthStore } from '../../stores/authStore';
+import DashboardLayout from '../../components/layout/DashboardLayout';
 
-const MEAL_LABELS: Record<string, string> = {
-  BREAKFAST: '🌅 Breakfast',
-  LUNCH: '☀️ Lunch',
-  SNACKS: '🍎 Snacks',
-  DINNER: '🌙 Dinner',
-};
-
-const MEAL_COLORS: Record<string, string> = {
-  BREAKFAST: '#f59e0b',
-  LUNCH: '#6366f1',
-  SNACKS: '#10b981',
-  DINNER: '#a855f7',
-};
-
-// Inline star rating for a specific scheduleId
-function MealRating({ scheduleId, mealType }: { scheduleId: string; mealType: string }) {
-  const [hovered, setHovered] = useState(0);
-  const qc = useQueryClient();
-  const color = MEAL_COLORS[mealType] || '#6366f1';
-
-  const { data: myFeedback } = useQuery({
-    queryKey: ['my-feedback'],
-    queryFn: () => api.get('/feedback/my').then((r) => r.data.data),
-    staleTime: 30_000,
-  });
-
-  const existing = myFeedback?.find((f: any) => f.scheduleId === scheduleId);
-  const currentRating = existing?.rating ?? 0;
-
-  const submitMutation = useMutation({
-    mutationFn: (rating: number) => api.post('/feedback', { scheduleId, rating }),
-    onSuccess: () => {
-      toast.success('⭐ Meal rated! Thank you for your feedback.');
-      qc.invalidateQueries({ queryKey: ['my-feedback'] });
-    },
-    onError: () => toast.error('Failed to submit rating'),
-  });
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-        {currentRating > 0 ? 'Your rating:' : 'Rate meal:'}
-      </span>
-      <div style={{ display: 'flex', gap: 1 }}>
-        {[1, 2, 3, 4, 5].map((star) => {
-          const filled = star <= (hovered || currentRating);
-          return (
-            <button
-              key={star}
-              onClick={() => !currentRating && submitMutation.mutate(star)}
-              onMouseEnter={() => !currentRating && setHovered(star)}
-              onMouseLeave={() => setHovered(0)}
-              disabled={submitMutation.isPending || currentRating > 0}
-              title={currentRating > 0 ? `Rated ${currentRating} star${currentRating > 1 ? 's' : ''}` : `Rate ${star} star${star > 1 ? 's' : ''}`}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: currentRating > 0 ? 'default' : 'pointer',
-                padding: 2,
-                lineHeight: 0,
-              }}
-            >
-              <Star
-                size={14}
-                color={filled ? color : 'rgba(100,116,139,0.35)'}
-                fill={filled ? color : 'none'}
-                style={{ transition: 'all 0.1s' }}
-              />
-            </button>
-          );
-        })}
-      </div>
-      {currentRating > 0 && (
-        <span style={{ fontSize: 10, color, fontWeight: 700 }}>{currentRating}★</span>
-      )}
-      {!currentRating && (
-        <span style={{ fontSize: 10, color: 'var(--color-danger)', fontWeight: 600 }}>Required</span>
-      )}
-    </div>
-  );
+interface AttendanceRecord {
+  id: string;
+  status: 'PRESENT' | 'ABSENT';
+  markedAt: string;
+  schedule: {
+    mealType: 'BREAKFAST' | 'LUNCH' | 'SNACKS' | 'DINNER';
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+  };
 }
 
+interface AttendanceStats {
+  total: number;
+  present: number;
+  absent: number;
+  attendanceRate: number;
+}
+
+const MEAL_COLORS: Record<string, { bg: string; color: string }> = {
+  BREAKFAST: { bg: '#fef3c7', color: '#d97706' },
+  LUNCH:     { bg: '#d1fae5', color: '#059669' },
+  SNACKS:    { bg: '#ede9fe', color: '#7c3aed' },
+  DINNER:    { bg: '#dbeafe', color: '#2563eb' },
+};
+
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 export default function AttendancePage() {
-  const [selectedSchedule, setSelectedSchedule] = useState<string>('');
-  const [qrData, setQrData] = useState<{ qrDataUrl: string; token: string; schedule: any } | null>(null);
-  useAuthStore();
-  const qc = useQueryClient();
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [year, setYear] = useState(new Date().getFullYear());
 
-  const { data: todaySchedules } = useQuery({
-    queryKey: ['today-menu'],
-    queryFn: () => api.get('/menu/today').then((r) => r.data.data),
+  const { data: statsData } = useQuery<AttendanceStats>({
+    queryKey: ['my-attendance-stats'],
+    queryFn: () => api.get('/attendance/stats').then(r => r.data.data),
   });
 
-  const { data: attendance } = useQuery({
-    queryKey: ['my-attendance'],
-    queryFn: () => api.get('/attendance/my?limit=30').then((r) => r.data),
+  const { data: historyData, isLoading } = useQuery({
+    queryKey: ['my-attendance', month, year],
+    queryFn: () =>
+      api.get('/attendance/my', { params: { month, year, limit: 100 } }).then(r => r.data),
   });
 
-  const { data: stats } = useQuery({
-    queryKey: ['attendance-stats'],
-    queryFn: () => api.get('/attendance/stats').then((r) => r.data.data),
-  });
-
-  const generateQR = useMutation({
-    mutationFn: (scheduleId: string) => api.post('/attendance/qr/generate', { scheduleId }),
-    onSuccess: (res) => {
-      setQrData(res.data.data);
-      toast.success('QR code generated! Show it at the mess counter');
-      qc.invalidateQueries({ queryKey: ['my-attendance'] });
-    },
-    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to generate QR'),
-  });
+  const records: AttendanceRecord[] = historyData?.data || [];
 
   return (
-    <DashboardLayout>
-      <div className="page">
-        <div className="page-header">
-          <h1 className="page-title">Attendance</h1>
-          <p className="page-subtitle">QR-based meal attendance tracking</p>
-        </div>
-
-        {/* Stats */}
-        <div className="stats-grid" style={{ marginBottom: 28 }}>
-          <div className="card" style={{ padding: 20 }}>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6 }}>Attendance Rate</div>
-            <div style={{ fontSize: 32, fontWeight: 800 }}>{Math.round(stats?.percentage || 0)}%</div>
-            <div style={{ height: 6, background: 'rgba(43,127,196,0.1)', borderRadius: 3, marginTop: 10 }}>
-              <div style={{ height: '100%', width: `${stats?.percentage || 0}%`, background: 'var(--gradient-primary)', borderRadius: 3 }} />
-            </div>
-          </div>
-          <div className="card" style={{ padding: 20 }}>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6 }}>Meals Present</div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--color-success)' }}>{stats?.present || 0}</div>
-          </div>
-          <div className="card" style={{ padding: 20 }}>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 6 }}>Meals Missed</div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--color-danger)' }}>{stats?.absent || 0}</div>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24 }}>
-          {/* QR Generator */}
-          <div className="card" style={{ padding: 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <QrCode size={18} color="var(--color-primary-light)" />
-              Generate QR Code
-            </h3>
-
-            <div className="form-group" style={{ marginBottom: 16 }}>
-              <label className="form-label">Select Meal</label>
-              <select
-                className="form-input form-select"
-                value={selectedSchedule}
-                onChange={(e) => { setSelectedSchedule(e.target.value); setQrData(null); }}
-              >
-                <option value="">Choose today's meal...</option>
-                {(todaySchedules || []).map((s: any) => (
-                  <option key={s.id} value={s.id}>
-                    {MEAL_LABELS[s.mealType] || s.mealType} ({s.startTime}–{s.endTime})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              className="btn btn-primary"
-              style={{ width: '100%' }}
-              disabled={!selectedSchedule || generateQR.isPending}
-              onClick={() => generateQR.mutate(selectedSchedule)}
-            >
-              <QrCode size={16} />
-              {generateQR.isPending ? 'Generating...' : 'Generate QR Code'}
-            </button>
-
-            {qrData && (
-              <div style={{ marginTop: 20, textAlign: 'center' }}>
-                <div style={{ padding: 16, background: 'white', borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
-                  <img src={qrData.qrDataUrl} alt="QR Code" style={{ width: 180, height: 180 }} />
-                </div>
-                <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 10 }}>
-                  Valid for 15 minutes · Show at the mess counter
-                </p>
-                <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(245,158,11,0.1)', borderRadius: 8, fontSize: 12, color: '#f59e0b', display: 'inline-block' }}>
-                  <Clock size={12} style={{ display: 'inline', marginRight: 4 }} />
-                  Expires soon
-                </div>
-              </div>
-            )}
-
-            {(!todaySchedules || todaySchedules.length === 0) && (
-              <div style={{ textAlign: 'center', padding: 24, color: 'var(--color-text-muted)', fontSize: 13 }}>
-                No meals scheduled for today
-              </div>
-            )}
-          </div>
-
-          {/* Attendance History with Feedback */}
-          <div className="card" style={{ padding: 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Attendance History</h3>
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 16 }}>
-              ⭐ Please rate each meal after attending — your feedback helps improve quality!
-            </p>
-            {attendance?.data?.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 500, overflowY: 'auto' }}>
-                {attendance.data.map((a: any) => (
-                  <div
-                    key={a.id}
-                    style={{
-                      padding: '12px 14px',
-                      background: a.status === 'PRESENT' ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)',
-                      borderRadius: 12,
-                      border: `1px solid ${a.status === 'PRESENT' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: a.status === 'PRESENT' ? 8 : 0 }}>
-                      {a.status === 'PRESENT' ? (
-                        <CheckCircle size={16} color="var(--color-success)" />
-                      ) : (
-                        <AlertCircle size={16} color="var(--color-danger)" />
-                      )}
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>
-                          {MEAL_LABELS[a.schedule?.mealType] || a.schedule?.mealType}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
-                          {new Date(a.scannedAt).toLocaleDateString('en-IN')} at {new Date(a.scannedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                      <span className={`badge ${a.status === 'PRESENT' ? 'badge-success' : 'badge-danger'}`}>
-                        {a.status}
-                      </span>
-                    </div>
-
-                    {/* Mandatory feedback for PRESENT meals */}
-                    {a.status === 'PRESENT' && a.schedule?.id && (
-                      <div style={{ paddingLeft: 26, paddingTop: 4, borderTop: '1px solid rgba(16,185,129,0.15)', marginTop: 4 }}>
-                        <MealRating scheduleId={a.schedule.id} mealType={a.schedule.mealType} />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state" style={{ padding: 40 }}>
-                <div className="empty-state-icon"><QrCode size={28} /></div>
-                <h3>No attendance records</h3>
-                <p>Generate a QR code and get it scanned at the mess counter</p>
-              </div>
-            )}
-          </div>
-        </div>
+    <DashboardLayout title="My Attendance">
+    <div style={{ padding: '24px 20px', maxWidth: 900, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--color-text-primary)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ClipboardList size={26} color="var(--color-primary)" />
+          My Attendance
+        </h1>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: 14 }}>
+          Attendance is marked by committee members at meal time.
+        </p>
       </div>
+
+      {/* Stats Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16, marginBottom: 32 }}>
+        {[
+          { label: 'Total Meals', value: statsData?.total ?? '—', color: '#6366f1', icon: <ClipboardList size={18} /> },
+          { label: 'Present', value: statsData?.present ?? '—', color: '#10b981', icon: <CheckCircle2 size={18} /> },
+          { label: 'Absent', value: statsData?.absent ?? '—', color: '#ef4444', icon: <XCircle size={18} /> },
+          { label: 'Rate', value: statsData ? `${statsData.attendanceRate}%` : '—', color: '#f59e0b', icon: <BarChart3 size={18} /> },
+        ].map(card => (
+          <div key={card.label} style={{
+            background: '#fff',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '18px 20px',
+            boxShadow: '0 1px 6px rgba(0,0,0,0.04)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: card.color }}>
+              {card.icon}
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{card.label}</span>
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: card.color }}>{card.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Month Filter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <Calendar size={16} style={{ color: 'var(--color-text-muted)' }} />
+        <select
+          value={month}
+          onChange={e => setMonth(Number(e.target.value))}
+          className="form-input"
+          style={{ width: 140 }}
+        >
+          {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m, i) => (
+            <option key={m} value={i + 1}>{m}</option>
+          ))}
+        </select>
+        <select
+          value={year}
+          onChange={e => setYear(Number(e.target.value))}
+          className="form-input"
+          style={{ width: 100 }}
+        >
+          {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+
+      {/* Attendance History */}
+      {isLoading ? (
+        <div style={{ textAlign: 'center', padding: 60 }}>
+          <Loader2 size={28} className="animate-spin" style={{ color: 'var(--color-primary)' }} />
+        </div>
+      ) : records.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--color-text-muted)' }}>
+          <ClipboardList size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
+          <p style={{ fontWeight: 500 }}>No attendance records for this month</p>
+          <p style={{ fontSize: 13, marginTop: 4 }}>Attendance is marked by committee members at each meal.</p>
+        </div>
+      ) : (
+        <div style={{ background: '#fff', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+          {/* Table Header */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 130px 100px 80px',
+            padding: '12px 20px',
+            background: 'var(--color-bg-secondary)',
+            borderBottom: '1px solid var(--color-border)',
+            fontSize: 11, fontWeight: 700, color: 'var(--color-text-muted)',
+            textTransform: 'uppercase', letterSpacing: '0.05em',
+          }}>
+            <span>Date &amp; Time</span>
+            <span>Meal</span>
+            <span>Day</span>
+            <span>Status</span>
+          </div>
+
+          {records.map((record, idx) => {
+            const meal = MEAL_COLORS[record.schedule.mealType] || { bg: '#f3f4f6', color: '#6b7280' };
+            const date = new Date(record.markedAt);
+            return (
+              <div key={record.id} style={{
+                display: 'grid', gridTemplateColumns: '1fr 130px 100px 80px',
+                padding: '14px 20px',
+                borderBottom: idx < records.length - 1 ? '1px solid var(--color-border)' : 'none',
+                alignItems: 'center',
+              }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>
+                    {date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                    {date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: 12, fontWeight: 700, padding: '4px 12px', borderRadius: 20,
+                  background: meal.bg, color: meal.color, width: 'fit-content',
+                }}>
+                  {record.schedule.mealType}
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                  {DAYS[record.schedule.dayOfWeek]}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {record.status === 'PRESENT' ? (
+                    <>
+                      <CheckCircle2 size={16} color="#10b981" />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#10b981' }}>Present</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle size={16} color="#ef4444" />
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#ef4444' }}>Absent</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
     </DashboardLayout>
   );
 }

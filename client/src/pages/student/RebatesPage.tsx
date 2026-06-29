@@ -86,7 +86,7 @@ export default function RebatesPage() {
   const step1Valid = form.fromDate && form.toDate && form.reason.trim().length >= 10 && days > 0;
   const step2Valid =
     form.bankAccountName.trim() &&
-    form.bankAccountNumber.trim().length >= 9 &&
+    form.bankAccountNumber.trim().length >= 5 &&
     form.ifscCode.trim().length === 11 &&
     form.bankName.trim();
 

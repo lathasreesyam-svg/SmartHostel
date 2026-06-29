@@ -14,7 +14,6 @@ async function main() {
   await prisma.complaint.deleteMany({});
   await prisma.notification.deleteMany({});
   await prisma.feedback.deleteMany({});
-  await prisma.payment.deleteMany({});
   await prisma.chatMessage.deleteMany({});
   await prisma.studentProfile.deleteMany({
     where: { user: { email: { in: ['student@demo.com', 'committee@demo.com', 'admin@demo.com', 'warden@demo.com'] } } }
@@ -172,20 +171,6 @@ async function main() {
         isRead: false,
       },
     ],
-  });
-
-  // Sample payment record
-  await prisma.payment.create({
-    data: {
-      userId: studentUser.id,
-      amount: 2500,
-      type: 'MESS_FEE',
-      status: 'PENDING',
-      description: 'May 2026 Mess Fee',
-      month: 5,
-      year: 2026,
-      dueDate: new Date('2026-05-31'),
-    },
   });
 
   // Sample complaint

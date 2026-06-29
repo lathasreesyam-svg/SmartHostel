@@ -10,6 +10,7 @@ router.use(authenticate, authorize('ADMIN'));
 router.get('/users', adminController.getUsers.bind(adminController));
 router.patch('/users/:id', adminController.updateUser.bind(adminController));
 router.post('/users/:id/deactivate', adminController.deactivateUser.bind(adminController));
+router.delete('/users/:id', adminController.deleteUser.bind(adminController));
 
 // Role invitation
 router.post('/invite', adminController.sendInvite.bind(adminController));

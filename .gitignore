@@ -44,3 +44,4 @@ redis_data/
 # Temporary
 *.tmp
 *.temp
+server/.env

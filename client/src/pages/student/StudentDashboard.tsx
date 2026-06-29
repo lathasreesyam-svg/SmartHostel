@@ -1,7 +1,7 @@
 import {
   UtensilsCrossed,
   MessageSquare,
-  QrCode,
+  ClipboardList,
   Bell,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -74,8 +74,8 @@ export default function StudentDashboard() {
         <div className="stats-grid">
           <StatCard
             title="Attendance Rate"
-            value={`${Math.round(attendanceStats?.percentage || 0)}%`}
-            icon={<QrCode size={22} />}
+            value={`${attendanceStats?.attendanceRate || 0}%`}
+            icon={<ClipboardList size={22} />}
             color="primary"
             change={5}
           />

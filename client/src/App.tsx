@@ -11,6 +11,8 @@ const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'));
 const VerifyOtpPage = lazy(() => import('./pages/auth/VerifyOtpPage'));
+const GoogleCallbackPage = lazy(() => import('./pages/auth/GoogleCallbackPage'));
+const CompleteProfilePage = lazy(() => import('./pages/auth/CompleteProfilePage'));
 
 // Student pages
 const StudentDashboard = lazy(() => import('./pages/student/StudentDashboard'));
@@ -19,7 +21,6 @@ const RebatesPage = lazy(() => import('./pages/student/RebatesPage'));
 const MenuPage = lazy(() => import('./pages/student/MenuPage'));
 const AttendancePage = lazy(() => import('./pages/student/AttendancePage'));
 const NotificationsPage = lazy(() => import('./pages/student/NotificationsPage'));
-const PaymentsPage = lazy(() => import('./pages/student/PaymentsPage'));
 const ChatPage = lazy(() => import('./pages/student/ChatPage'));
 
 // Committee pages
@@ -31,7 +32,7 @@ const InventoryPage = lazy(() => import('./pages/committee/InventoryPage'));
 const AnalyticsPage = lazy(() => import('./pages/committee/AnalyticsPage'));
 const CommitteeNotificationsPage = lazy(() => import('./pages/committee/CommitteeNotificationsPage'));
 const WorkersPage = lazy(() => import('./pages/committee/WorkersPage'));
-const AttendanceScanPage = lazy(() => import('./pages/committee/AttendanceScanPage'));
+const CommitteeAttendanceMarkPage = lazy(() => import('./pages/committee/CommitteeAttendanceMarkPage'));
 
 // Admin pages
 const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
@@ -41,6 +42,7 @@ const AdminInventoryPage = lazy(() => import('./pages/committee/InventoryPage'))
 const AdminComplaintsPage = lazy(() => import('./pages/admin/AdminComplaintsPage'));
 const AdminRebatesPage = lazy(() => import('./pages/admin/AdminRebatesPage'));
 const AdminAttendancePage = lazy(() => import('./pages/admin/AdminAttendancePage'));
+const AdminAnalyticsPage = lazy(() => import('./pages/admin/AdminAnalyticsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const FeedbackPage = lazy(() => import('./pages/committee/FeedbackPage'));
 
@@ -78,8 +80,11 @@ export default function App() {
             <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
             <Route path="/auth/verify-otp" element={<VerifyOtpPage />} />
+            {/* Google OAuth callback — receives token from backend redirect */}
+            <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
+            <Route path="/auth/complete-profile" element={<CompleteProfilePage />} />
 
-            {/* Student Routes */}
+            {/* Student Routes (no payments) */}
             <Route path="/student/dashboard" element={
               <ProtectedRoute roles={['STUDENT']}>
                 <StudentDashboard />
@@ -108,11 +113,6 @@ export default function App() {
             <Route path="/student/notifications" element={
               <ProtectedRoute roles={['STUDENT']}>
                 <NotificationsPage />
-              </ProtectedRoute>
-            } />
-            <Route path="/student/payments" element={
-              <ProtectedRoute roles={['STUDENT']}>
-                <PaymentsPage />
               </ProtectedRoute>
             } />
             <Route path="/student/chat" element={
@@ -167,9 +167,10 @@ export default function App() {
                 <FeedbackPage />
               </ProtectedRoute>
             } />
-            <Route path="/committee/attendance/scan" element={
+            {/* Committee: Attendance Marking (RBAC+ABAC enforced in page + backend) */}
+            <Route path="/committee/attendance/mark" element={
               <ProtectedRoute roles={['COMMITTEE', 'WARDEN', 'ADMIN']}>
-                <AttendanceScanPage />
+                <CommitteeAttendanceMarkPage />
               </ProtectedRoute>
             } />
 
@@ -207,6 +208,11 @@ export default function App() {
             <Route path="/admin/attendance" element={
               <ProtectedRoute roles={['ADMIN']}>
                 <AdminAttendancePage />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/analytics" element={
+              <ProtectedRoute roles={['ADMIN']}>
+                <AdminAnalyticsPage />
               </ProtectedRoute>
             } />
             <Route path="/admin/workers" element={

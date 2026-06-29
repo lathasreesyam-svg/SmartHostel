@@ -97,7 +97,9 @@ export class AuthController {
 
   async updateProfile(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const result = await authService.updateProfile(req.user!.userId, req.body);
+      // ABAC: actorId and targetUserId — service enforces they must match
+      const actorId = req.user!.userId;
+      const result = await authService.updateProfile(actorId, actorId, req.body);
       res.json({ success: true, data: result });
     } catch (error) { next(error); }
   }
@@ -106,6 +108,15 @@ export class AuthController {
     try {
       const result = await authService.adminCreateUser(req.body);
       res.status(201).json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
+  // ── Delete Account (Self Deletion) ──────────────────────────────────────────
+  async deleteAccount(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const userId = req.user!.userId;
+      const result = await authService.deleteAccount(userId);
+      res.json({ success: true, ...result });
     } catch (error) { next(error); }
   }
 }

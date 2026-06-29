@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Search, UserCheck, UserX, ChevronDown, Mail, Send, Shield,
-  RefreshCw, AlertTriangle, GraduationCap, CreditCard, X,
+  RefreshCw, AlertTriangle, GraduationCap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DashboardLayout from '../../components/layout/DashboardLayout';
@@ -35,16 +35,6 @@ export default function UsersPage() {
   const [inviteRole, setInviteRole] = useState<'COMMITTEE' | 'WARDEN' | 'ADMIN'>('COMMITTEE');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // ── Create Payment Modal ──
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentTarget, setPaymentTarget] = useState<{ id: string; name: string } | null>(null);
-  const [payAmount, setPayAmount] = useState('3500');
-  const [payType, setPayType] = useState('MESS_FEE');
-  const [payDesc, setPayDesc] = useState('');
-  const [payMonth, setPayMonth] = useState(String(new Date().getMonth() + 1));
-  const [payYear, setPayYear] = useState(String(new Date().getFullYear()));
-  const [payDue, setPayDue] = useState('');
-
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['admin-users', activeRole, search, page],
     queryFn: () =>
@@ -70,6 +60,16 @@ export default function UsersPage() {
     onError: () => toast.error('Failed to update user'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/users/${id}`),
+    onSuccess: () => {
+      toast.success('User deleted permanently');
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+      setOpenMenuId(null);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to delete user'),
+  });
+
   const inviteMutation = useMutation({
     mutationFn: () => api.post('/admin/invite', { targetEmail: inviteEmail, targetRole: inviteRole }),
     onSuccess: () => {
@@ -79,33 +79,6 @@ export default function UsersPage() {
     },
     onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to send invite'),
   });
-
-  const createPaymentMutation = useMutation({
-    mutationFn: () =>
-      api.post('/payments', {
-        userId: paymentTarget?.id,
-        amount: parseFloat(payAmount),
-        type: payType,
-        description: payDesc || undefined,
-        month: parseInt(payMonth),
-        year: parseInt(payYear),
-        dueDate: payDue || undefined,
-      }),
-    onSuccess: () => {
-      toast.success(`✅ Payment of ₹${payAmount} created for ${paymentTarget?.name}`);
-      qc.invalidateQueries({ queryKey: ['my-payments'] });
-      setShowPaymentModal(false);
-      setPaymentTarget(null);
-      setPayAmount('3500'); setPayDesc(''); setPayDue('');
-    },
-    onError: (err: any) => toast.error(err?.response?.data?.message || 'Failed to create payment'),
-  });
-
-  const openPaymentModal = (user: any) => {
-    setPaymentTarget({ id: user.id, name: user.studentProfile?.name || user.email });
-    setShowPaymentModal(true);
-    setOpenMenuId(null);
-  };
 
   // Open invite modal pre-filled with a specific user's email
   const openInviteForUser = (email: string) => {
@@ -117,6 +90,8 @@ export default function UsersPage() {
 
   const users: any[] = data?.data || [];
   const pagination = data?.pagination;
+
+
 
   return (
     <DashboardLayout>
@@ -288,7 +263,6 @@ export default function UsersPage() {
                               }}>
                                 <div style={{ padding: '8px 0' }}>
                                   {/* Invite to Role — replaces direct "Change Role" */}
-                                  <div style={{ padding: '4px 12px', fontSize: 10, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Role</div>
                                   <button
                                     style={{
                                       display: 'flex', alignItems: 'center', gap: 8, width: '100%',
@@ -301,21 +275,6 @@ export default function UsersPage() {
                                     onClick={() => openInviteForUser(user.email)}
                                   >
                                     <Send size={13} color="var(--color-primary-light)" /> Invite to Role…
-                                  </button>
-
-                                  {/* Create Payment */}
-                                  <div style={{ padding: '4px 12px', fontSize: 10, fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Payment</div>
-                                  <button
-                                    style={{
-                                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                                      padding: '8px 14px', background: 'none', border: 'none',
-                                      color: 'var(--color-text-primary)', cursor: 'pointer', fontSize: 13,
-                                    }}
-                                    onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(16,185,129,0.08)')}
-                                    onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'none')}
-                                    onClick={() => openPaymentModal(user)}
-                                  >
-                                    <CreditCard size={13} color="#10b981" /> Create Payment…
                                   </button>
 
                                   <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
@@ -350,6 +309,26 @@ export default function UsersPage() {
                                       <UserCheck size={13} /> Reactivate
                                     </button>
                                   )}
+
+                                  <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
+
+                                  <button
+                                    style={{
+                                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                                      padding: '8px 14px', background: 'none', border: 'none',
+                                      color: '#ef4444', cursor: 'pointer', fontSize: 13,
+                                    }}
+                                    onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)')}
+                                    onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = 'none')}
+                                    onClick={() => {
+                                      if (window.confirm(`Are you sure you want to PERMANENTLY delete ${user.email}? This cannot be undone.`)) {
+                                        deleteMutation.mutate(user.id);
+                                      }
+                                    }}
+                                    disabled={deleteMutation.isPending}
+                                  >
+                                    <Shield size={13} /> Delete User
+                                  </button>
                                 </div>
                               </div>
                             )}
@@ -419,7 +398,7 @@ export default function UsersPage() {
                 <div style={{ padding: 12, borderRadius: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', gap: 8 }}>
                   <GraduationCap size={14} color="#10b981" style={{ flexShrink: 0, marginTop: 1 }} />
                   <span style={{ fontSize: 12, color: '#10b981' }}>
-                    If this user is a student, they will <strong>keep all student access</strong> (menu, payments, attendance, etc.) and also gain the new role's access. Invite expires in 48 hours.
+                    If this user is a student, they will <strong>keep all student access</strong> (menu, attendance, etc.) and also gain the new role's access. Invite expires in 48 hours.
                   </span>
                 </div>
 
@@ -440,86 +419,6 @@ export default function UsersPage() {
                   onClick={() => inviteMutation.mutate()}
                 >
                   {inviteMutation.isPending ? 'Sending…' : 'Send Invite'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Create Payment Modal */}
-        {showPaymentModal && paymentTarget && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div className="card" style={{ width: '100%', maxWidth: 480, padding: 28 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CreditCard size={18} color="#10b981" />
-                  </div>
-                  <div>
-                    <h2 style={{ fontSize: 17, fontWeight: 700 }}>Create Payment</h2>
-                    <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>For: <strong>{paymentTarget.name}</strong></p>
-                  </div>
-                </div>
-                <button className="btn btn-ghost btn-icon" onClick={() => setShowPaymentModal(false)}><X size={16} /></button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {/* Amount + Type row */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label className="label">Amount (₹)</label>
-                    <input className="input" type="number" min="1" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="3500" />
-                  </div>
-                  <div>
-                    <label className="label">Type</label>
-                    <select className="input" value={payType} onChange={e => setPayType(e.target.value)}>
-                      <option value="MESS_FEE">Mess Fee</option>
-                      <option value="HOSTEL_FEE">Hostel Fee</option>
-                      <option value="FINE">Fine</option>
-                      <option value="OTHER">Other</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="label">Description (optional)</label>
-                  <input className="input" value={payDesc} onChange={e => setPayDesc(e.target.value)} placeholder="e.g. Mess Fee - June 2026" />
-                </div>
-
-                {/* Month + Year + Due Date */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label className="label">Month</label>
-                    <select className="input" value={payMonth} onChange={e => setPayMonth(e.target.value)}>
-                      {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].map((m,i) => (
-                        <option key={i+1} value={String(i+1)}>{m}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">Year</label>
-                    <input className="input" type="number" value={payYear} onChange={e => setPayYear(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="label">Due Date</label>
-                    <input className="input" type="date" value={payDue} onChange={e => setPayDue(e.target.value)} />
-                  </div>
-                </div>
-
-                <div style={{ padding: 10, borderRadius: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', fontSize: 12, color: '#10b981' }}>
-                  💡 This creates a <strong>PENDING</strong> payment. The student can then pay via Razorpay from their Payments page.
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowPaymentModal(false)}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  style={{ flex: 1 }}
-                  disabled={!payAmount || createPaymentMutation.isPending}
-                  onClick={() => createPaymentMutation.mutate()}
-                >
-                  {createPaymentMutation.isPending ? 'Creating…' : <><CreditCard size={14} /> Create Payment</>}
                 </button>
               </div>
             </div>

@@ -14,9 +14,11 @@ import { connectRedis } from './config/redis';
 import { logger } from './utils/logger';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { initSocketHandlers } from './sockets';
+import { startBackgroundJobs } from './jobs';
 
 // Routes
 import authRoutes from './routes/auth.routes';
+import oauthRoutes from './routes/oauth.routes';
 import complaintRoutes from './routes/complaint.routes';
 import rebateRoutes from './routes/rebate.routes';
 import menuRoutes from './routes/menu.routes';
@@ -25,7 +27,6 @@ import attendanceRoutes from './routes/attendance.routes';
 import inventoryRoutes from './routes/inventory.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import workerRoutes from './routes/worker.routes';
-import paymentRoutes from './routes/payment.routes';
 import adminRoutes from './routes/admin.routes';
 import feedbackRoutes from './routes/feedback.routes';
 import chatRoutes from './routes/chat.routes';
@@ -33,7 +34,7 @@ import chatRoutes from './routes/chat.routes';
 const app = express();
 const httpServer = createServer(app);
 
-// ── Socket.IO ──
+// ── Socket.IO ──────────────────────────────────────────────────────────────
 const io = new Server(httpServer, {
   cors: {
     origin: env.CLIENT_URL,
@@ -44,7 +45,7 @@ const io = new Server(httpServer, {
 
 initSocketHandlers(io);
 
-// ── Security Middleware ──
+// ── Security Middleware ────────────────────────────────────────────────────
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
@@ -59,7 +60,6 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:5173',
 ];
 
-// Add CLIENT_URL from env if it's a real URL (not '*')
 if (env.CLIENT_URL && env.CLIENT_URL !== '*') {
   ALLOWED_ORIGINS.push(env.CLIENT_URL);
 }
@@ -67,13 +67,8 @@ if (env.CLIENT_URL && env.CLIENT_URL !== '*') {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, Postman, same-origin)
       if (!origin) return callback(null, true);
-
-      // Allow all origins if CLIENT_URL is set to wildcard
       if (env.CLIENT_URL === '*') return callback(null, true);
-
-      // Allow any Railway or Render deployment URL dynamically
       if (
         origin.endsWith('.up.railway.app') ||
         origin.endsWith('.onrender.com') ||
@@ -81,19 +76,16 @@ app.use(
       ) {
         return callback(null, true);
       }
-
-      // Allow exact matches from the list
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-
       callback(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Idempotency-Key'],
   })
 );
 
-// ── Rate Limiting — Global ──────────────────────────────────────────────────
+// ── Rate Limiting ──────────────────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: env.RATE_LIMIT_WINDOW_MS,
   max: env.RATE_LIMIT_MAX,
@@ -102,39 +94,44 @@ const limiter = rateLimit({
   message: { success: false, message: 'Too many requests, please try again later.' },
 });
 
-// ── Rate Limiting — AI Chat (strict: 10 requests/minute per user) ─────────────
-const aiLimiter = rateLimit({
-  windowMs: 60 * 1000,       // 1 minute window
-  max: 10,                   // max 10 AI requests per minute per IP
+// Strict limit on auth endpoints to prevent brute force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false }, // suppress IPv6 validation warning
-  message: { success: false, message: 'AI chat rate limit exceeded. Please wait a moment before sending more messages.' },
+  message: { success: false, message: 'Too many auth attempts. Please wait 15 minutes.' },
 });
 
 app.use('/api/', limiter);
-app.use('/api/v1/chat', aiLimiter); // Extra strict limit for AI endpoints
+app.use('/api/v1/auth', authLimiter);
 
-// ── General Middleware ──
+// ── General Middleware ─────────────────────────────────────────────────────
 app.use(compression());
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined', { stream: { write: (msg) => logger.info(msg.trim()) } }));
 
-// ── Health Check ──
+// ── Health Check ───────────────────────────────────────────────────────────
 app.get('/api/v1/health', (_req, res) => {
   res.json({
     success: true,
     status: 'healthy',
     timestamp: new Date().toISOString(),
     environment: env.NODE_ENV,
-    version: '1.0.0',
+    version: '2.0.0',
+    services: {
+      database: 'connected',
+      redis: env.REDIS_URL ? 'configured' : 'disabled',
+      googleOauth: env.GOOGLE_CLIENT_ID ? 'configured' : 'not_configured',
+    },
   });
 });
 
-// ── API Routes ──
+// ── API Routes ─────────────────────────────────────────────────────────────
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', oauthRoutes);       // Google OAuth (no auth middleware needed)
 app.use('/api/v1/complaints', complaintRoutes);
 app.use('/api/v1/rebates', rebateRoutes);
 app.use('/api/v1/menu', menuRoutes);
@@ -143,25 +140,30 @@ app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/inventory', inventoryRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/workers', workerRoutes);
-app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/feedback', feedbackRoutes);
 app.use('/api/v1/chat', chatRoutes);
 
-// ── 404 & Error Handling ──
+// ── 404 & Error Handling ───────────────────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
-// ── Bootstrap ──
+// ── Bootstrap ─────────────────────────────────────────────────────────────
 async function bootstrap() {
   try {
     await connectDB();
     await connectRedis();
+    startBackgroundJobs();
 
     httpServer.listen(env.PORT, () => {
-      logger.info(`🚀 Server running on port ${env.PORT} in ${env.NODE_ENV} mode`);
+      logger.info(`🚀 SmartHostel Core API running on port ${env.PORT} [${env.NODE_ENV}]`);
       logger.info(`📡 Socket.IO ready`);
       logger.info(`🔗 API: http://localhost:${env.PORT}/api/v1`);
+      if (env.GOOGLE_CLIENT_ID) {
+        logger.info(`🔑 Google OAuth: configured`);
+      } else {
+        logger.warn(`⚠️  Google OAuth: NOT configured (set GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET)`);
+      }
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

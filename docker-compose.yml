@@ -33,7 +33,9 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── Backend API ───────────────────────────────────────────────
+  # ── Core API (monolith) ────────────────────────────────────────
+  # Handles: Auth, Google OAuth, Rebates (ACID), Complaints, Menu,
+  #          Inventory, Notifications, Workers, Analytics, Chat
   backend:
     build:
       context: ./server
@@ -47,9 +49,11 @@ services:
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
       PORT: "5000"
-      CLIENT_URL: "*"
-      RAZORPAY_KEY_ID: "rzp_test_SxZOeiPTiif2Nd"
-      RAZORPAY_KEY_SECRET: "Hv4Jdr7gtZjrNnmpY3mzwvag"
+      CLIENT_URL: "http://localhost:3000"
+      # Google OAuth — set in .env or Railway dashboard
+      # GOOGLE_CLIENT_ID: your-client-id
+      # GOOGLE_CLIENT_SECRET: your-client-secret
+      # GOOGLE_CALLBACK_URL: https://your-backend-url/api/v1/auth/google/callback
     ports:
       - "5001:5000"
     depends_on:
@@ -58,7 +62,51 @@ services:
       redis:
         condition: service_healthy
 
-  # ── Frontend ──────────────────────────────────────────────────
+  # ── Attendance Microservice ────────────────────────────────────
+  # Isolated: high-frequency meal marking, independent failure domain
+  # RBAC: COMMITTEE/WARDEN/ADMIN only; ABAC: no self-marking
+  # ACID: bulk upsert in Prisma transaction
+  # Circuit-breaker: core API calls /health before proxying marks
+  attendance-service:
+    build:
+      context: .
+      dockerfile: services/attendance-service/Dockerfile
+    container_name: hostel_attendance
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/hostel_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-key-change-in-prod}
+      PORT: "5002"
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Notification Worker Microservice ───────────────────────────
+  # Decoupled async email delivery via Redis pub/sub
+  # If this crashes: main API still works, emails are queued
+  # Subscribes to Redis channel "notifications:email"
+  notification-worker:
+    build:
+      context: ./services/notification-worker
+      dockerfile: Dockerfile
+    container_name: hostel_notification_worker
+    restart: unless-stopped
+    env_file:
+      - ./server/.env   # Reuse SMTP settings from server .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      NODE_ENV: production
+    depends_on:
+      redis:
+        condition: service_healthy
+    # No exposed port — this is a worker, not a server
+
+  # ── Frontend ───────────────────────────────────────────────────
   frontend:
     build:
       context: ./client
@@ -66,26 +114,14 @@ services:
       args:
         VITE_API_URL: http://localhost:5001/api/v1
         VITE_SOCKET_URL: http://localhost:5001
+        VITE_ATTENDANCE_URL: http://localhost:5002
     container_name: hostel_frontend
     restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - backend
-
-  # ── AI Microservice ───────────────────────────────────────────
-  ai-service:
-    build:
-      context: ./ai-service
-      dockerfile: Dockerfile
-    container_name: hostel_ai
-    restart: unless-stopped
-    env_file:
-      - ./ai-service/.env
-    environment:
-      AI_MODE: mock
-    ports:
-      - "8001:8000"
+      - attendance-service
 
 volumes:
   postgres_data:

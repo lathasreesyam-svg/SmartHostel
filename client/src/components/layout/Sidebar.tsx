@@ -6,8 +6,6 @@ import {
   MessageSquare,
   Calendar,
   Bell,
-  CreditCard,
-  QrCode,
   Users,
   Package,
   BarChart3,
@@ -21,9 +19,8 @@ import {
   Star,
   ClipboardList,
   GraduationCap,
-  ScanLine,
   X,
-  Bot,
+  CheckSquare,
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useLayoutStore } from '../../stores/layoutStore';
@@ -40,10 +37,8 @@ const studentNav: NavItem[] = [
   { to: '/student/menu', icon: <UtensilsCrossed size={18} />, label: 'Menu' },
   { to: '/student/complaints', icon: <MessageSquare size={18} />, label: 'Complaints' },
   { to: '/student/rebates', icon: <Calendar size={18} />, label: 'Rebates' },
-  { to: '/student/attendance', icon: <QrCode size={18} />, label: 'Attendance' },
+  { to: '/student/attendance', icon: <ClipboardList size={18} />, label: 'Attendance' },
   { to: '/student/notifications', icon: <Bell size={18} />, label: 'Notifications' },
-  { to: '/student/payments', icon: <CreditCard size={18} />, label: 'Payments' },
-  { to: '/student/chat', icon: <Bot size={18} />, label: 'AI Assistant' },
 ];
 
 const committeeNav: NavItem[] = [
@@ -51,7 +46,7 @@ const committeeNav: NavItem[] = [
   { to: '/committee/menu', icon: <UtensilsCrossed size={18} />, label: 'Menu' },
   { to: '/committee/complaints', icon: <MessageSquare size={18} />, label: 'Complaints' },
   { to: '/committee/rebates', icon: <Calendar size={18} />, label: 'Rebates' },
-  { to: '/committee/attendance/scan', icon: <ScanLine size={18} />, label: 'Scan Attendance' },
+  { to: '/committee/attendance/mark', icon: <CheckSquare size={18} />, label: 'Mark Attendance' },
   { to: '/committee/inventory', icon: <Package size={18} />, label: 'Inventory' },
   { to: '/committee/workers', icon: <Briefcase size={18} />, label: 'Workers' },
   { to: '/committee/feedback', icon: <Star size={18} />, label: 'Feedback' },

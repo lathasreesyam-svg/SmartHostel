@@ -3,21 +3,31 @@ import { attendanceService } from '../services/attendance.service';
 import type { AuthRequest } from '../middleware/auth';
 
 export class AttendanceController {
-  async generateQR(req: AuthRequest, res: Response, next: NextFunction) {
+
+  async markAttendance(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { scheduleId } = req.body;
-      const result = await attendanceService.generateQR(req.user!.userId, scheduleId);
-      res.json({ success: true, data: result });
+      const { scheduleId, studentId, status } = req.body;
+      const result = await attendanceService.markAttendance({
+        markerId: req.user!.userId,
+        scheduleId,
+        studentId,
+        status,
+      });
+      res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
   }
 
-  async scanQR(req: AuthRequest, res: Response, next: NextFunction) {
+  async markBulkAttendance(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const { token } = req.body;
-      const result = await attendanceService.scanQR(token, req.user!.role);
-      res.json({ success: true, data: result });
+      const { scheduleId, entries } = req.body;
+      const result = await attendanceService.markBulkAttendance({
+        markerId: req.user!.userId,
+        scheduleId,
+        entries,
+      });
+      res.status(200).json({ success: true, data: result });
     } catch (error) {
       next(error);
     }
@@ -34,6 +44,7 @@ export class AttendanceController {
 
   async getStats(req: AuthRequest, res: Response, next: NextFunction) {
     try {
+      // ABAC: students see only own stats
       const userId = req.user!.role === 'STUDENT' ? req.user!.userId : undefined;
       const result = await attendanceService.getStats(userId);
       res.json({ success: true, data: result });
@@ -46,6 +57,16 @@ export class AttendanceController {
     try {
       const result = await attendanceService.getAllAttendance(req.query as any);
       res.json({ success: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getStudentsForSchedule(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const { scheduleId } = req.params;
+      const result = await attendanceService.getStudentsForSchedule(scheduleId as string);
+      res.json({ success: true, data: result });
     } catch (error) {
       next(error);
     }

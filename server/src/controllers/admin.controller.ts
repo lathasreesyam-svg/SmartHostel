@@ -83,6 +83,16 @@ export class AdminController {
     } catch (e) { next(e); }
   }
 
+  async deleteUser(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      const id = req.params.id as string;
+      if (id === req.user!.userId) throw createError('Cannot delete yourself from this interface', 400);
+
+      await prisma.user.delete({ where: { id } });
+      res.json({ success: true, message: 'User deleted permanently' });
+    } catch (e) { next(e); }
+  }
+
   async sendInvite(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const { targetEmail, targetRole } = req.body;

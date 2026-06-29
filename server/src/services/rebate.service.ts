@@ -1,42 +1,92 @@
 import prisma from '../config/database';
 import { createError } from '../middleware/errorHandler';
+import { abacPolicies } from '../config/permissions';
 import { getPaginationParams, buildPaginatedResponse } from '../utils/pagination';
+import { getRedisClient } from '../config/redis';
+import { logger } from '../utils/logger';
 import type { CreateRebateInput, ReviewRebateInput } from '../validators/rebate.validator';
 
 export class RebateService {
-  async create(userId: string, input: CreateRebateInput) {
-    // Check for overlapping rebates
-    const overlapping = await prisma.rebate.findFirst({
-      where: {
-        userId,
-        status: { in: ['PENDING', 'APPROVED'] },
-        OR: [
-          {
-            fromDate: { lte: new Date(input.toDate) },
-            toDate: { gte: new Date(input.fromDate) },
-          },
-        ],
-      },
-    });
 
-    if (overlapping) {
-      throw createError('You already have a rebate request for overlapping dates', 409);
+  // ── Create Rebate (ACID + ABAC + Idempotency) ─────────────────────────────
+  // Uses SELECT FOR UPDATE (pessimistic locking) inside a serializable transaction
+  // to prevent two concurrent requests from both creating overlapping rebates.
+  async create(userId: string, input: CreateRebateInput, idempotencyKey?: string) {
+
+    // ── Idempotency Check ──────────────────────────────────────────────────
+    // If client retries (network error), return cached response instead of creating duplicate
+    if (idempotencyKey) {
+      const cached = await prisma.idempotencyKey.findUnique({
+        where: { key: idempotencyKey },
+      });
+      if (cached && cached.userId === userId) {
+        logger.info(`Idempotency hit for key ${idempotencyKey}`);
+        return cached.result;
+      }
     }
 
-    const bankDetails = input.bankAccountName
-      ? `\n\n---BANK---\nAccount: ${input.bankAccountName}\nBank: ${input.bankName}\nA/C No: ${input.bankAccountNumber}\nIFSC: ${input.ifscCode}`
-      : '';
+    const fromDate = new Date(input.fromDate);
+    const toDate = new Date(input.toDate);
 
-    return prisma.rebate.create({
-      data: {
-        userId,
-        fromDate: new Date(input.fromDate),
-        toDate: new Date(input.toDate),
-        reason: input.reason + bankDetails,
-      },
+    if (fromDate >= toDate) {
+      throw createError('fromDate must be before toDate', 400);
+    }
+
+    // ── ACID Transaction with Pessimistic Lock ─────────────────────────────
+    // Isolation level: Serializable prevents phantom reads.
+    // SELECT FOR UPDATE locks existing rows so concurrent transactions queue up.
+    const rebate = await prisma.$transaction(async (tx) => {
+
+      // Lock all PENDING/APPROVED rebates for this user to prevent concurrent overlap
+      await tx.$executeRaw`
+        SELECT id FROM "Rebate"
+        WHERE "userId" = ${userId}
+          AND status IN ('PENDING', 'APPROVED')
+        FOR UPDATE
+      `;
+
+      // Double-check overlap after acquiring lock
+      const overlapping = await tx.rebate.findFirst({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'APPROVED'] },
+          AND: [
+            { fromDate: { lte: toDate } },
+            { toDate: { gte: fromDate } },
+          ],
+        },
+      });
+
+      if (overlapping) {
+        throw createError('You already have a rebate for overlapping dates', 409);
+      }
+
+      return tx.rebate.create({
+        data: {
+          userId,
+          fromDate,
+          toDate,
+          reason: input.reason,
+        },
+      });
+    }, {
+      isolationLevel: 'Serializable',  // Strongest ACID isolation — no phantom reads
+      maxWait: 5000,
+      timeout: 10000,
     });
+
+    // ── Cache idempotency result (24h TTL) ─────────────────────────────────
+    if (idempotencyKey) {
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await prisma.idempotencyKey.create({
+        data: { key: idempotencyKey, userId, resource: 'rebate', result: rebate as any, expiresAt },
+      }).catch(() => { /* non-critical — just skip caching */ });
+    }
+
+    return rebate;
   }
 
+  // ── Get All (RBAC-filtered at controller) ─────────────────────────────────
   async getAll(query: { page?: number; limit?: number; status?: string; userId?: string }) {
     const { page, limit, skip } = getPaginationParams(query);
     const where: Record<string, unknown> = {};
@@ -65,7 +115,8 @@ export class RebateService {
     return buildPaginatedResponse(data, total, page, limit);
   }
 
-  async getById(id: string, userId?: string, role?: string) {
+  // ── Get By ID (ABAC: student can only see own) ─────────────────────────────
+  async getById(id: string, actorId: string, actorRole: string) {
     const rebate = await prisma.rebate.findUnique({
       where: { id },
       include: {
@@ -79,22 +130,28 @@ export class RebateService {
     });
 
     if (!rebate) throw createError('Rebate not found', 404);
-    if (role === 'STUDENT' && rebate.userId !== userId) {
+
+    // ABAC: students can only view their own rebates
+    if (actorRole === 'STUDENT' && rebate.userId !== actorId) {
       throw createError('Forbidden', 403);
     }
 
     return rebate;
   }
 
+  // ── Review (RBAC + ABAC) ───────────────────────────────────────────────────
+  // RBAC: only COMMITTEE, WARDEN, ADMIN (enforced on route)
+  // ABAC: reviewer cannot be the rebate owner — even if they are COMMITTEE
   async review(id: string, reviewerId: string, input: ReviewRebateInput) {
     const rebate = await prisma.rebate.findUnique({ where: { id } });
     if (!rebate) throw createError('Rebate not found', 404);
+
     if (rebate.status !== 'PENDING') {
-      throw createError('Rebate is already reviewed', 400);
+      throw createError('Only PENDING rebates can be reviewed', 400);
     }
 
-    // 🛡️ Prevent self-approval: committee members cannot approve their own rebates
-    if (rebate.userId === reviewerId) {
+    // ABAC: enforce no-self-review policy (committee member cannot approve own rebate)
+    if (!abacPolicies.canReviewRebate(reviewerId, rebate.userId)) {
       throw createError('You cannot review your own rebate application', 403);
     }
 
@@ -109,6 +166,22 @@ export class RebateService {
     });
   }
 
+  // ── Cancel (ABAC: only owner, only PENDING) ────────────────────────────────
+  async cancel(id: string, actorId: string) {
+    const rebate = await prisma.rebate.findUnique({ where: { id } });
+    if (!rebate) throw createError('Rebate not found', 404);
+
+    if (!abacPolicies.canCancelRebate(actorId, rebate.userId, rebate.status)) {
+      throw createError('You can only cancel your own PENDING rebate', 403);
+    }
+
+    return prisma.rebate.update({
+      where: { id },
+      data: { status: 'REJECTED', reviewNote: 'Cancelled by student' },
+    });
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
   async getStats() {
     const [total, pending, approved, rejected] = await Promise.all([
       prisma.rebate.count(),
@@ -116,10 +189,10 @@ export class RebateService {
       prisma.rebate.count({ where: { status: 'APPROVED' } }),
       prisma.rebate.count({ where: { status: 'REJECTED' } }),
     ]);
-
     return { total, pending, approved, rejected };
   }
 
+  // ── Calculate Rebate Days for a Month ─────────────────────────────────────
   async calculateDays(userId: string, month: number, year: number) {
     const start = new Date(year, month - 1, 1);
     const end = new Date(year, month, 0, 23, 59, 59);
@@ -142,6 +215,14 @@ export class RebateService {
     }
 
     return { userId, month, year, rebateDays: totalDays };
+  }
+
+  // ── Cleanup expired idempotency keys (run periodically) ───────────────────
+  async cleanupIdempotencyKeys() {
+    const result = await prisma.idempotencyKey.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    logger.info(`Cleaned up ${result.count} expired idempotency keys`);
   }
 }
 

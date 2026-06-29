@@ -1,5 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// SmartHostel — Prisma Schema
+// Hybrid architecture: Core monolith + 2 microservices
+// ACID properties enforced via Prisma transactions + raw SQL locking
 
 generator client {
   provider = "prisma-client-js"
@@ -56,21 +57,6 @@ enum RebateStatus {
   REJECTED
 }
 
-enum PaymentStatus {
-  PENDING
-  PROCESSING
-  SUCCESS
-  FAILED
-  REFUNDED
-}
-
-enum PaymentType {
-  MESS_FEE
-  HOSTEL_FEE
-  FINE
-  REFUND
-}
-
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -80,7 +66,6 @@ enum NotificationType {
   ANNOUNCEMENT
   COMPLAINT_UPDATE
   REBATE_UPDATE
-  PAYMENT
   MEAL_REMINDER
   EMERGENCY
   GENERAL
@@ -100,21 +85,21 @@ enum Shift {
 model User {
   id              String   @id @default(uuid())
   email           String   @unique
-  passwordHash    String
+  passwordHash    String?  // Nullable: Google OAuth users have no password
   role            Role     @default(STUDENT)
-  primaryRole     Role     @default(STUDENT)  // Original/base role — never changed on elevation
+  primaryRole     Role     @default(STUDENT) // Original base role — never changed on elevation
   isEmailVerified Boolean  @default(false)
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   studentProfile  StudentProfile?
+  googleAccount   GoogleAccount?
   notifications   Notification[]
   complaints      Complaint[]
   responses       ComplaintResponse[]
   rebates         Rebate[]
   attendance      Attendance[]
-  payments        Payment[]
   sentMessages    ChatMessage[]      @relation("SentMessages")
   feedback        Feedback[]
   emailVerTokens  EmailVerification[]
@@ -125,13 +110,28 @@ model User {
   @@index([primaryRole])
 }
 
+// OAuth: one Google account per User
+model GoogleAccount {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  googleId     String   @unique
+  displayName  String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([googleId])
+}
+
 model EmailVerification {
   id        String   @id @default(uuid())
   userId    String
-  token     String   @unique   // UUID — used as a lookup key
-  otp       String   @default("") // 6-digit OTP code shown to the user
+  token     String   @unique
+  otp       String   @default("")
   expiresAt DateTime
   createdAt DateTime @default(now())
+
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([token])
@@ -144,9 +144,25 @@ model PasswordReset {
   token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([token])
+}
+
+// Idempotency: prevents duplicate writes from client retries
+// Store idempotency key → result for 24h
+model IdempotencyKey {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  userId     String
+  resource   String   // e.g. "rebate", "complaint"
+  result     Json     // Cached response body
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([key])
+  @@index([userId, resource])
 }
 
 model StudentProfile {
@@ -172,13 +188,13 @@ model StudentProfile {
 }
 
 model HostelBlock {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  capacity    Int
-  currentOccupancy Int @default(0)
-  wardenId    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String   @unique
+  capacity         Int
+  currentOccupancy Int      @default(0)
+  wardenId         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   students    StudentProfile[]
 
@@ -266,13 +282,15 @@ model ComplaintResponse {
   createdAt   DateTime @default(now())
 
   complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id])
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([complaintId])
 }
 
 // ========================
 // REBATES
+// ACID: create uses SELECT FOR UPDATE + transaction to prevent concurrent overlap
+// ABAC: reviewer.userId must != rebate.userId (enforced in service)
 // ========================
 
 model Rebate {
@@ -292,6 +310,8 @@ model Rebate {
 
   @@index([userId])
   @@index([status])
+  @@index([userId, status])           // Composite for overlap check queries
+  @@index([fromDate, toDate])         // Composite for date range queries
 }
 
 // ========================
@@ -337,6 +357,7 @@ model Purchase {
 
 // ========================
 // NOTIFICATIONS
+// Async email delivery via Redis pub/sub → notification-worker microservice
 // ========================
 
 model Notification {
@@ -354,20 +375,23 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@index([type])
-  @@index([userId, isRead, createdAt])
+  @@index([userId, isRead, createdAt]) // Composite for unread query
 }
 
 // ========================
 // ATTENDANCE
+// Manual marking by committee — no QR scanner
+// attendance-service microservice handles mark/mark-bulk
+// ABAC: marker.userId must != student.userId
 // ========================
 
 model Attendance {
   id             String           @id @default(uuid())
-  userId         String
+  userId         String           // Student being marked
   scheduleId     String
   status         AttendanceStatus
-  scannedAt      DateTime         @default(now())
-  qrToken        String?
+  markedById     String?          // Committee member who marked it (ABAC audit trail)
+  markedAt       DateTime         @default(now())
 
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   schedule       MealSchedule @relation(fields: [scheduleId], references: [id])
@@ -375,7 +399,8 @@ model Attendance {
   @@unique([userId, scheduleId])
   @@index([userId])
   @@index([scheduleId])
-  @@index([userId, scannedAt])
+  @@index([markedById])
+  @@index([userId, markedAt])      // For monthly attendance reports
 }
 
 // ========================
@@ -388,40 +413,12 @@ model Feedback {
   scheduleId  String?
   rating      Int      // 1-5
   comment     String?
-  sentiment   String?  // AI-analyzed: positive, negative, neutral
   createdAt   DateTime @default(now())
 
   user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([rating])
-}
-
-// ========================
-// PAYMENTS
-// ========================
-
-model Payment {
-  id            String        @id @default(uuid())
-  userId        String
-  amount        Float
-  type          PaymentType
-  status        PaymentStatus @default(PENDING)
-  description   String?
-  transactionId String?       @unique
-  month         Int?
-  year          Int?
-  dueDate       DateTime?
-  paidAt        DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-
-  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([status])
-  @@index([type])
-  @@index([userId, month, year])
 }
 
 // ========================
@@ -469,7 +466,7 @@ model ChatMessage {
   createdAt  DateTime @default(now())
 
   room       ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  sender     User     @relation("SentMessages", fields: [senderId], references: [id])
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([roomId])
   @@index([senderId])

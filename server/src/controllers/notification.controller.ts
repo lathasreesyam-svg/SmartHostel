@@ -10,7 +10,8 @@ export class NotificationController {
   async getMyNotifications(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const q = req.query as Record<string, string>;
-      const result = await notificationService.getMyNotifications(req.user!.userId, {
+      // ABAC: pass actorId as first arg — service checks actorId === userId
+      const result = await notificationService.getMyNotifications(req.user!.userId, req.user!.userId, {
         page: q.page ? Number(q.page) : 1,
         limit: q.limit ? Number(q.limit) : 10,
         unreadOnly: q.unreadOnly === 'true',

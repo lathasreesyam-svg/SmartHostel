@@ -3,9 +3,12 @@ import { rebateService } from '../services/rebate.service';
 import type { AuthRequest } from '../middleware/auth';
 
 export class RebateController {
+
   async create(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const result = await rebateService.create(req.user!.userId, req.body);
+      // Pass X-Idempotency-Key header for deduplication (client retries)
+      const idempotencyKey = req.headers['x-idempotency-key'] as string | undefined;
+      const result = await rebateService.create(req.user!.userId, req.body, idempotencyKey);
       res.status(201).json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -15,9 +18,10 @@ export class RebateController {
   async getAll(req: AuthRequest, res: Response, next: NextFunction) {
     try {
       const query: Record<string, unknown> = { ...req.query };
-      // Pure STUDENT role → only their own rebates
-      if (req.user!.role === 'STUDENT') query.userId = req.user!.userId;
-
+      // ABAC/RBAC: students only see own rebates
+      if (req.user!.role === 'STUDENT' && req.user!.primaryRole === 'STUDENT') {
+        query.userId = req.user!.userId;
+      }
       const result = await rebateService.getAll(query as any);
       res.json({ success: true, ...result });
     } catch (error) {
@@ -27,7 +31,11 @@ export class RebateController {
 
   async getById(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const result = await rebateService.getById(req.params.id as string, req.user!.userId, req.user!.role);
+      const result = await rebateService.getById(
+        req.params.id as string,
+        req.user!.userId,
+        req.user!.role
+      );
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);
@@ -36,7 +44,22 @@ export class RebateController {
 
   async review(req: AuthRequest, res: Response, next: NextFunction) {
     try {
-      const result = await rebateService.review(req.params.id as string, req.user!.userId, req.body);
+      // ABAC enforced inside rebateService.review()
+      const result = await rebateService.review(
+        req.params.id as string,
+        req.user!.userId,
+        req.body
+      );
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async cancel(req: AuthRequest, res: Response, next: NextFunction) {
+    try {
+      // ABAC: only owner can cancel own PENDING rebate (enforced in service)
+      const result = await rebateService.cancel(req.params.id as string, req.user!.userId);
       res.json({ success: true, data: result });
     } catch (error) {
       next(error);

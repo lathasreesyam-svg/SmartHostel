@@ -232,7 +232,7 @@ export default function CommitteeMenuPage() {
             <div className="modal-body">
               <div style={{display:'flex',flexDirection:'column',gap:14}}>
                 <div style={{padding:12,background:'rgba(99,102,241,0.08)',borderRadius:10,fontSize:13,color:'var(--color-text-muted)'}}>
-                  💡 Schedule slots define <strong>when</strong> each meal is served. Select the meal items to include — students need an active schedule to generate QR attendance codes.
+                  💡 Schedule slots define <strong>when</strong> each meal is served. Select the meal items to include — committee members use these schedules to mark attendance for each meal.
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                   <div className="form-group"><label className="form-label">Day of Week</label>
