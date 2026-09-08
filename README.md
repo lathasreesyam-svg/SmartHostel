@@ -2,7 +2,7 @@
 
 A comprehensive, full-stack platform designed to digitize and streamline hostel management operations. It features a role-based dashboard for Admins, Committee members, and Students, alongside real-time updates and integrated AI capabilities.
 
-**🌍 Live Demo:** [https://smarthostel-production-f1c8.up.railway.app](https://smarthostel-production-f1c8.up.railway.app)
+**🌍 Live Demo:** [https://ample-learning-production.up.railway.app](https://ample-learning-production.up.railway.app)
 
 ## 🚀 Features
 
@@ -10,10 +10,8 @@ A comprehensive, full-stack platform designed to digitize and streamline hostel 
 - **Attendance Tracking:** Real-time attendance monitoring via QR code scanning (isolated microservice).
 - **Complaints & Maintenance:** Track, manage, and resolve hostel issues with sentiment analysis.
 - **Mess Menu Management:** View and update daily/weekly mess menus.
-- **Rebates & Payments:** Built-in Razorpay integration for handling hostel fees and mess rebates.
 - **Inventory Management:** Keep track of hostel assets and stock levels.
 - **Real-Time Notifications:** Instant alerts powered by Socket.io and an async email notification worker.
-- **AI Chat & Feedback:** Intelligent chat assistant and sentiment analysis for complaints/feedback — built into the core API.
 - **Analytics & Dashboards:** Visual data representation using Recharts.
 - **Google OAuth:** Sign in with Google alongside traditional JWT auth.
 
@@ -22,11 +20,9 @@ A comprehensive, full-stack platform designed to digitize and streamline hostel 
 ### Frontend (Client)
 - **Framework:** React 18 with TypeScript & Vite
 - **Styling:** Tailwind CSS v4, Lucide React
-- **State Management:** Zustand, TanStack React Query v5
 - **Forms & Validation:** React Hook Form, Zod
 - **Routing:** React Router DOM v6
 - **Real-Time:** Socket.io-client
-- **QR Code:** html5-qrcode, react-qr-scanner, qrcode (generation)
 - **UI Utilities:** clsx, tailwind-merge, react-hot-toast, date-fns, axios
 - **Analytics:** Recharts
 
@@ -35,13 +31,11 @@ A comprehensive, full-stack platform designed to digitize and streamline hostel 
 - **Database:** PostgreSQL with Prisma ORM v6
 - **Caching & Pub/Sub:** Redis (ioRedis)
 - **Authentication:** JWT (access + refresh tokens), bcryptjs, Google OAuth 2.0
-- **Payments:** Razorpay
 - **Real-Time:** Socket.io (WebSockets)
 - **Email:** Nodemailer (via SMTP / SendGrid)
 - **Background Jobs:** node-cron (scheduled tasks)
 - **Middleware & Security:** Helmet, CORS, Express Rate Limit, compression, cookie-parser, morgan
 - **Validation:** Zod
-- **Logging:** Winston, winston-daily-rotate-file
 - **Utilities:** uuid, axios
 
 ### Microservices (`services/`)
@@ -160,5 +154,4 @@ npm install
 npm run dev
 ```
 
-## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+Made with ❤️ by Syam Tammireddi 
